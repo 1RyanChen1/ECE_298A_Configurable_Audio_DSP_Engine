@@ -10,18 +10,56 @@ module tt_um_example (
     output wire [7:0] uo_out,   // Dedicated outputs
     input  wire [7:0] uio_in,   // IOs: Input path
     output wire [7:0] uio_out,  // IOs: Output path
-    output wire [7:0] uio_oe,   // IOs: Enable path (active high: 0=input, 1=output)
-    input  wire       ena,      // always 1 when the design is powered, so you can ignore it
-    input  wire       clk,      // clock
-    input  wire       rst_n     // reset_n - low to reset
+    output wire [7:0] uio_oe,   // IOs: Enable path
+    input  wire       ena,
+    input  wire       clk,
+    input  wire       rst_n
 );
 
-  // All output pins must be assigned. If not used, assign to 0.
-  assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
-  assign uio_out = 0;
-  assign uio_oe  = 0;
+    /*
+     * Temporary MAC synthesis test.
+     *
+     * Use primary inputs for operands so synthesis cannot
+     * constant-fold the multiplier.
+     */
+    (* keep *) wire signed [15:0] mac_a;
+    (* keep *) wire signed [15:0] mac_b;
+    (* keep *) wire signed [39:0] mac_acc;
 
-  // List all unused inputs to prevent warnings
-  wire _unused = &{ena, clk, rst_n, 1'b0};
+    assign mac_a = {ui_in, uio_in};
+    assign mac_b = {uio_in, ui_in};
+
+    /*
+     * Keep the instance even though mac_acc is not currently
+     * connected to a TinyTapeout output.
+     */
+    (* keep *)
+    mac16 u_mac (
+        .clk   (clk),
+        .rst_n (rst_n),
+        .clear (1'b0),
+        .en    (1'b1),
+        .a     (mac_a),
+        .b     (mac_b),
+        .acc   (mac_acc)
+    );
+
+    // Not exposing the MAC result yet.
+    assign uo_out  = 8'b0;
+    assign uio_out = 8'b0;
+    assign uio_oe  = 8'b0;
+
+    /*
+     * Consume otherwise-unused inputs to avoid lint warnings.
+     *
+     * ui_in/uio_in/clk/rst_n are already used above.
+     */
+    wire _unused = &{
+        ena,
+        mac_acc,
+        1'b0
+    };
 
 endmodule
+
+`default_nettype wire
