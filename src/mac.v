@@ -5,7 +5,7 @@ module mac16 (
     input  wire en,
     input  wire signed [15:0] a,
     input  wire signed [15:0] b,
-    output wire signed [39:0] acc
+    output reg signed [39:0] acc
 );
 
     wire signed [31:0] product;
