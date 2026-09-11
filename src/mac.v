@@ -8,17 +8,25 @@ module mac16 (
     output reg signed [39:0] acc
 );
 
-    wire signed [31:0] product;
+    reg signed [31:0] product_reg;
+    reg signed [39:0] acc_reg;
 
-    assign product = a * b;
 
     always @(posedge clk or negedge rst_n) begin
-        if (!rst_n)
+        if (!rst_n) begin
             acc <= '0;
-        else if (clear)
+            product_reg <= '0;
+            acc_reg <= '0;
+        end
+        else if (clear) begin
             acc <= '0;
-        else if (en)
-            acc <= acc + product;
+            acc_reg <= '0;
+            product_reg <= '0;
+        end
+        else if (en) begin
+            product_reg <= a * b;
+            acc <= acc_reg + product_reg;
+        end
     end
 
 endmodule
