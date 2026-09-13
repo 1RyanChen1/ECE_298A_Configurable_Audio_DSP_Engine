@@ -1,0 +1,12 @@
+Modules:
+
+Parser Module:
+- grabs the information from the RPI, splits into whichever registers are needed in order to then be fed into the dsp module
+
+DSP Module:
+- actually doing the dsp math
+- made up of two inputs that are then multiplied, the bit information as well as the corresponding coefficient for the information
+- then, we have the carry out from the previous which is then fed out to the output
+
+PMOD Interface Module:
+- take the output from the dsp and uses it to talk to the PMOD to actually play the module
