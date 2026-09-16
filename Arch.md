@@ -42,6 +42,7 @@ An example of DTR handshake waveform
 +---------------+-------------+-----------+
 | Reserved[15:6]| Length[5:2] | Type[1:0] |
 +---------------+-------------+-----------+
+```
 
 
    Packet Type
