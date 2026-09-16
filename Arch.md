@@ -72,10 +72,9 @@ The CONTROL packet is a single-flit packet (`LEN = 0`). The command is encoded i
 |---|---|---|
 | `00` | `Reserved` |Reserved |
 | `01` | `COMMIT_COEFF` | Requests atomic exchange of active and shadow coefficient banks after the current sample finishes processing |
-| `10` | `RESET_FILTER_STATE` | Clears FIR sample-history/state registers |
+| `10` | `RESET_FILTER` | Clears FIR sample history/state registers |
 | `11` | `FLUSH` | Flush/reset stream-related state; exact behavior TBD |
 
-`COMMIT_COEFF` sets `coeff_commit_pending`. Once a coefficient commit is pending, the shadow coefficient bank is frozen and further coefficient writes are stalled until the bank exchange completes.
 
 ### CONFIG Packet
 
@@ -84,7 +83,7 @@ The CONFIG packet is a single-flit packet (`LEN = 0`). Configuration changes mus
 | Bits | Field | Description |
 |---|---|---|
 | `[15:12]` | `NUM_TAPS[3:0]` | Number of active FIR taps. `0` = bypass, `1–8` = FIR tap count |
-| `[11:8]` | `OUT_SHIFT[3:0]` | Arithmetic right-shift applied to the FIR accumulator before conversion back to 16-bit PCM |
+| `[11:8]` | `OUT_SHIFT[3:0]` | Arithmetic right-shift applied to the FIR accumulator before conversion back to 16b PCM |
 | `[7]` | `SAT_EN` | Enables signed output saturation |
 | `[6]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
 | `[5:2]` | `LEN` | Must be `0000` |
@@ -106,7 +105,7 @@ The packet always contains 8 coefficient payload flits, therefore `LEN = 8`.
 | Header Bits | Field | Description |
 |---|---|---|
 | `[15:14]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
-| `[13:6]` | `COEFF_WE[7:0]` | Per-coefficient write-enable mask |
+| `[13:6]` | `COEFF_WE[7:0]` | Per coefficient write enable mask |
 | `[5:2]` | `LEN` | Must be `1000` (`8`) |
 | `[1:0]` | `TYPE` | Must be `01` |
 
