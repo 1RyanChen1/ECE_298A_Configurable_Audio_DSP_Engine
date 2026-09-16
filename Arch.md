@@ -44,11 +44,12 @@ An example of DTR handshake waveform
    +------------------------------------------ +
 
    Packet Type
-   Type
-   00  Control Packet: one-shot commands rather than persistent settings, e.g. COMMIT_COEFF, RESET_FILTER_STATE, FLUSH.
-   01  Coefficient Packet: writes FIR coefficients into the shadow coefficient bank. It does not immediately affect the active filter.
-   10  Config Packet: writes persistent DSP configuration, e.g. NUM_TAPS, maybe output scaling/format options later.
-   11  Data Packet: carries PCM audio samples to the DSP datapath. The parser forwards the payload toward the sample/input register.
+| Type | Packet | Description |
+|------|--------|-------------|
+| `00` | Control | One-shot commands rather than persistent settings, e.g. `COMMIT_COEFF`, `RESET_FILTER_STATE`, `FLUSH`. |
+| `01` | Coefficient | Writes FIR coefficients into the shadow coefficient bank. It does not immediately affect the active filter. |
+| `10` | Config | Writes persistent DSP configuration, e.g. `NUM_TAPS` and potentially output scaling/format options. |
+| `11` | Data | Carries PCM audio samples to the DSP datapath. The parser forwards the payload toward the sample/input register. |
    
    Racing Condition
     COEFF_WRITE always targets the shadow bank.
