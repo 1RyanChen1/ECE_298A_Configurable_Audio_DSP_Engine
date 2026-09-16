@@ -37,11 +37,12 @@ An example of DTR handshake waveform
    The header packet should follow such format.
    
    
-   +-15------------6-5-----------2-1---------0 +
-   
-   | Reserved[15:6]  | length[5:2]  | type[1:0]   |
-   
-   +------------------------------------------ +
+```text
+15             6 5           2 1         0
++---------------+-------------+-----------+
+| Reserved[15:6]| Length[5:2] | Type[1:0] |
++---------------+-------------+-----------+
+
 
    Packet Type
 | Type | Packet | Description |
