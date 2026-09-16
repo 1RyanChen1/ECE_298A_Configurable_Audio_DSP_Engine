@@ -41,20 +41,121 @@ An example of DTR handshake waveform
    
    
 ```text
-15             6 5           2 1         0
-+---------------+-------------+-----------+
-| Reserved[15:6]| Length[5:2] | Type[1:0] |
-+---------------+-------------+-----------+
+15                  6 5           2 1         0
++--------------------+-------------+-----------+
+| Type specific[15:6]| Length[5:2] | Type[1:0] |
++--------------------+-------------+-----------+
 ```
 
 
-   Packet Type
+### Packet Types
 | Type | Packet | Description |
 |------|--------|-------------|
 | `00` | Control | One-shot commands rather than persistent settings, e.g. `COMMIT_COEFF`, `RESET_FILTER_STATE`, `FLUSH`. |
 | `01` | Coefficient | Writes FIR coefficients into the shadow coefficient bank. It does not immediately affect the active filter. |
 | `10` | Config | Writes persistent DSP configuration, e.g. `NUM_TAPS` and potentially output scaling/format options. |
 | `11` | Data | Carries PCM audio samples to the DSP datapath. The parser forwards the payload toward the sample/input register. |
+
+
+### CONTROL Packet
+
+The CONTROL packet is a single-flit packet (`LEN = 0`). The command is encoded in the type-specific header bits.
+
+| Bits | Field | Description |
+|---|---|---|
+| `[15:8]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
+| `[7:6]` | `CTRL_ID[1:0]` | Control command |
+| `[5:2]` | `LEN` | Must be `0000` |
+| `[1:0]` | `TYPE` | Must be `00` |
+
+| `CTRL_ID` | Command | Description |
+|---|---|---|
+| `00` | `Reserved` |Reserved |
+| `01` | `COMMIT_COEFF` | Requests atomic exchange of active and shadow coefficient banks after the current sample finishes processing |
+| `10` | `RESET_FILTER_STATE` | Clears FIR sample-history/state registers |
+| `11` | `FLUSH` | Flush/reset stream-related state; exact behavior TBD |
+
+`COMMIT_COEFF` sets `coeff_commit_pending`. Once a coefficient commit is pending, the shadow coefficient bank is frozen and further coefficient writes are stalled until the bank exchange completes.
+
+### CONFIG Packet
+
+The CONFIG packet is a single-flit packet (`LEN = 0`). Configuration changes must not affect a sample already being processed. If a CONFIG packet arrives while the DSP is processing a sample, the configuration update becomes effective after the current sample completes.
+
+| Bits | Field | Description |
+|---|---|---|
+| `[15:12]` | `NUM_TAPS[3:0]` | Number of active FIR taps. `0` = bypass, `1–8` = FIR tap count |
+| `[11:8]` | `OUT_SHIFT[3:0]` | Arithmetic right-shift applied to the FIR accumulator before conversion back to 16-bit PCM |
+| `[7]` | `SAT_EN` | Enables signed output saturation |
+| `[6]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
+| `[5:2]` | `LEN` | Must be `0000` |
+| `[1:0]` | `TYPE` | Must be `10` |
+
+`NUM_TAPS = 0` bypasses FIR processing.
+
+`NUM_TAPS = 1` performs a single coefficient multiplication and can therefore be used as a gain operation.
+
+`NUM_TAPS = 2–8` performs an N-tap FIR.
+
+
+### COEFF_WRITE Packet
+
+A COEFF_WRITE packet writes FIR coefficients into the shadow coefficient bank. It does not modify the active coefficient bank.
+
+The packet always contains 8 coefficient payload flits, therefore `LEN = 8`.
+
+| Header Bits | Field | Description |
+|---|---|---|
+| `[15:14]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
+| `[13:6]` | `COEFF_WE[7:0]` | Per-coefficient write-enable mask |
+| `[5:2]` | `LEN` | Must be `1000` (`8`) |
+| `[1:0]` | `TYPE` | Must be `01` |
+
+Payload format:
+
+| Payload Flit | Contents |
+|---:|---|
+| `0` | `COEFF[0]` |
+| `1` | `COEFF[1]` |
+| `2` | `COEFF[2]` |
+| `3` | `COEFF[3]` |
+| `4` | `COEFF[4]` |
+| `5` | `COEFF[5]` |
+| `6` | `COEFF[6]` |
+| `7` | `COEFF[7]` |
+
+For each coefficient `i`:
+
+`COEFF_WE[i] = 1` causes payload flit `i` to overwrite `shadow_coeff[i]`.
+
+`COEFF_WE[i] = 0` causes payload flit `i` to be consumed but leaves `shadow_coeff[i]` unchanged.
+
+Coefficient writes always target the shadow bank. They do not affect the active coefficient bank until a `COMMIT_COEFF` command is processed.
+
+If `coeff_commit_pending = 1`, new COEFF_WRITE packets are stalled until the active/shadow bank exchange has completed.
+
+
+### DATA Packet
+
+A DATA packet carries signed 16-bit PCM samples.
+
+| Header Bits | Field | Description |
+|---|---|---|
+| `[15:6]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
+| `[5:2]` | `LEN` | Number of PCM samples contained in the packet (`1–15`) |
+| `[1:0]` | `TYPE` | Must be `11` |
+
+Each payload flit contains exactly one signed 16-bit PCM sample.
+
+| Payload Flit | Contents |
+|---:|---|
+| `0` | Sample 0 |
+| `1` | Sample 1 |
+| `...` | `...` |
+| `LEN-1` | Sample `LEN-1` |
+
+The maximum DATA packet contains 15 PCM samples:
+
+`1 header + 15 payload flits = 16 flits = 32 bytes`.
    
    Racing Condition
     COEFF_WRITE always targets the shadow bank.
