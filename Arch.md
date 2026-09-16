@@ -51,7 +51,7 @@ An example of DTR handshake waveform
 ### Packet Types
 | Type | Packet | Description |
 |------|--------|-------------|
-| `00` | Control | One-shot commands rather than persistent settings, e.g. `COMMIT_COEFF`, `RESET_FILTER_STATE`, `FLUSH`. |
+| `00` | Control | Control the Coeffient overwrite/FIR statemachine, e.g. `COMMIT_COEFF`, `RESET_FILTER`, `FLUSH`. |
 | `01` | Coefficient | Writes FIR coefficients into the shadow coefficient bank. It does not immediately affect the active filter. |
 | `10` | Config | Writes persistent DSP configuration, e.g. `NUM_TAPS` and potentially output scaling/format options. |
 | `11` | Data | Carries PCM audio samples to the DSP datapath. The parser forwards the payload toward the sample/input register. |
@@ -73,7 +73,7 @@ The CONTROL packet is a single-flit packet (`LEN = 0`). The command is encoded i
 | `00` | `Reserved` |Reserved |
 | `01` | `COMMIT_COEFF` | Requests atomic exchange of active and shadow coefficient banks after the current sample finishes processing |
 | `10` | `RESET_FILTER` | Clears FIR sample history/state registers |
-| `11` | `FLUSH` | Flush/reset stream-related state; exact behavior TBD |
+| `11` | `FLUSH` | IDK |
 
 
 ### CONFIG Packet
