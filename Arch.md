@@ -1,6 +1,6 @@
-**Configurable Audio DSP Engine**
+###**Configurable Audio DSP Engine**
 
-**Overview**
+###**Overview**
 
 The asic project aims as a configurable DSP engine for audio processing. The system consists of a RP 2040/2035 on the tinytapeout board(or any other electrically compatible MCU/FPGA SoC) that supplies the clock source for the system and transmits packetized data over an 8-bit DTR interface, and the audio pmod from TinyTapeout Store. The receiver will reassemble the 16 bits word and forward it to packet parser. The parser routes PCM samples directly to the DSP engine, configuration packets to the DSP configuration registers, and coefficient writes to a shadow coefficient bank. The active coefficient bank must not be modified during FIR processing. A COMMIT_COEFF command creates a pending coefficient update; the active and shadow coefficient banks are atomically exchanged only after processing of the current sample has completed. The configurable DSP will time multiplex the operation through a time-multiplexed 16-bit MAC datapath and forward the result to a sigma delta/PWM output 1 bit TX for Audio Pmod.
 
@@ -10,7 +10,7 @@ The asic project aims as a configurable DSP engine for audio processing. The sys
 
 676767676767676767676767676767
 
-**1. Module Interface**
+###**1. Module Interface**
   Module interface should use ready/valid handshake
   | Interface       | Signals                                                       | Purpose                                         |
 | --------------- | ------------------------------------------------------------- | ----------------------------------------------- |
@@ -21,7 +21,7 @@ The asic project aims as a configurable DSP engine for audio processing. The sys
 | Sample boundary | `sample_done` | DSP indicates current output sample is complete |
 
 
-**2. Host Interface**
+###**2. Host Interface**
 
   Host interface consists of following signals:
   Host:
@@ -47,7 +47,7 @@ READY should indicate receiver availability independently of the currently trans
 <img width="1443" height="314" alt="image" src="https://github.com/user-attachments/assets/057ca978-3656-4313-ae85-e69de4c8cf78" />
 An example of DTR handshake waveform
 
-**3. Packet Format**
+###**3. Packet Format**
 
    The communication between host and the system is packet based. Each packet is length varied can contains up to 16 flits(include header flit), length specifies the number of payload flits following the header.    Therefore total packet size is LEN + 1 flits, with a maximum packet size of 16 flits / 32 bytes.
    The header packet should follow such format.
@@ -176,7 +176,7 @@ The maximum DATA packet contains 15 PCM samples:
     The bank exchange occurs atomically only after the current output sample has finished processing. After the exchange, the previous active bank becomes the new shadow bank and coefficient writes may resume.
   Further Detail TBD
 
-**4. DSP Engine**
+###**4. DSP Engine**
 
    The DSP engine implements a configurable 0–8 tap FIR filter operating on 16-bit PCM samples and 16-bit coefficients. NUM_TAPS = 0 bypasses the filter, while NUM_TAPS = 1...8 determines the number of FIR taps evaluated for each output sample.
 
@@ -184,14 +184,14 @@ The maximum DATA packet contains 15 PCM samples:
 
   Signed fixed point semantics and further detail TBD.
   
-**5. Audio Output**
+###**5. Audio Output**
    The DSP produces signed 16bit PCM output samples. The audio output block converts each processed sample into a 1bit sigma-delta or PWM stream compatible with the Audio Pmod.
 
 
-**6. Status Signal**
+###**6. Status Signal**
    Status Signal will be used to display chip status directly as long latency sticky flags. Status flag must only be reset through (`Status_Clear`), otherwise the flag must not be cleared.
    
-**7. Verification**
+###**7. Verification**
    By inspection the SoC will work
    
    
