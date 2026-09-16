@@ -1,12 +1,23 @@
 **Configurable Audio DSP Engine**
 
-**1.Overview**
+**Overview**
 
 The asic project aims as a configurable DSP engine for audio processing. The system consists of a RP 2040/2035 on the tinytapeout board(or any other electrically compatible MCU/FPGA SoC) that supplies the clock source for the system and transmits packetized data over an 8-bit DTR interface, and the audio pmod from TinyTapeout Store. The receiver will reassemble the 16 bits word and forward it to packet parser. The parser routes PCM samples directly to the DSP engine, configuration packets to the DSP configuration registers, and coefficient writes to a shadow coefficient bank. The active coefficient bank must not be modified during FIR processing. A COMMIT_COEFF command creates a pending coefficient update; the active and shadow coefficient banks are atomically exchanged only after processing of the current sample has completed. The configurable DSP will time multiplex the operation through a time-multiplexed 16-bit MAC datapath and forward the result to a sigma delta/PWM output 1 bit TX for Audio Pmod.
 
 <img width="1295" height="363" alt="image" src="https://github.com/user-attachments/assets/123cbca5-a552-4d15-8b3f-4a6667f3467e" />
 
 676767676767676767676767676767
+
+**1. Module Interface**
+  Module interface should use ready/valid handshake
+  | Interface       | Signals                                                       | Purpose                                         |
+| --------------- | ------------------------------------------------------------- | ----------------------------------------------- |
+| PCM data        | `valid`, `ready`, `data[15:0]` | Transfer PCM samples from parser to DSP |
+| Config          | `valid`, `ready`, `num_taps[3:0]`, `out_shift[3:0]`, `sat_en` | Submit a complete pending DSP configuration |
+| Coefficient     | `valid`, `ready`, `idx[2:0]`, `data[15:0]` | Write one coefficient into shadow bank |
+| Control         | `valid`, `ready`, `ctrl_id[1:0]` | Submit control command |
+| Sample boundary | `sample_done` | DSP indicates current output sample is complete |
+
 
 **2. Host Interface**
 
@@ -51,7 +62,7 @@ An example of DTR handshake waveform
 ### Packet Types
 | Type | Packet | Description |
 |------|--------|-------------|
-| `00` | Control | Control the Coeffient overwrite/FIR statemachine, e.g. `COMMIT_COEFF`, `RESET_FILTER`, `FLUSH`. |
+| `00` | Control | Control the Coeffient overwrite/FIR statemachine, e.g. `COMMIT_COEFF`, `RESET_FILTER`. |
 | `01` | Coefficient | Writes FIR coefficients into the shadow coefficient bank. It does not immediately affect the active filter. |
 | `10` | Config | Writes persistent DSP configuration, e.g. `NUM_TAPS` and potentially output scaling/format options. |
 | `11` | Data | Carries PCM audio samples to the DSP datapath. The parser forwards the payload toward the sample/input register. |
@@ -73,7 +84,7 @@ The CONTROL packet is a single-flit packet (`LEN = 0`). The command is encoded i
 | `00` | `Reserved` |Reserved |
 | `01` | `COMMIT_COEFF` | Requests atomic exchange of active and shadow coefficient banks after the current sample finishes processing |
 | `10` | `RESET_FILTER` | Clears FIR sample history/state registers |
-| `11` | `FLUSH` | IDK |
+| `11` | `Reserved` |Reserved |
 
 
 ### CONFIG Packet
