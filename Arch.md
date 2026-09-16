@@ -4,7 +4,8 @@
 
 The asic project aims as a configurable DSP engine for audio processing. The system consists of a RP 2040/2035 on the tinytapeout board(or any other electrically compatible MCU/FPGA SoC) that supplies the clock source for the system and transmits packetized data over an 8-bit DTR interface, and the audio pmod from TinyTapeout Store. The receiver will reassemble the 16 bits word and forward it to packet parser. The parser routes PCM samples directly to the DSP engine, configuration packets to the DSP configuration registers, and coefficient writes to a shadow coefficient bank. The active coefficient bank must not be modified during FIR processing. A COMMIT_COEFF command creates a pending coefficient update; the active and shadow coefficient banks are atomically exchanged only after processing of the current sample has completed. The configurable DSP will time multiplex the operation through a time-multiplexed 16-bit MAC datapath and forward the result to a sigma delta/PWM output 1 bit TX for Audio Pmod.
 
-<img width="1299" height="511" alt="image" src="https://github.com/user-attachments/assets/4ea0ae31-180f-4b16-9b4e-de0f415b3e9a" />
+<img width="1295" height="474" alt="image" src="https://github.com/user-attachments/assets/25d7cd03-5dc6-4c56-9256-78aaae66133d" />
+
 
 
 676767676767676767676767676767
