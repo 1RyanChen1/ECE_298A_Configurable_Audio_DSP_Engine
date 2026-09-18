@@ -169,11 +169,17 @@ The maximum DATA packet contains 15 PCM samples:
 
 `1 header + 15 payload flits = 16 flits = 32 bytes`.
    
-   Racing Condition
+   Racing Condition:
+   
     COEFF_WRITE always targets the shadow bank.
     COMMIT_COEFF sets coeff_commit_pending flag.
-    Once coeff_commit_pending=1, the shadow bank is frozen. New coefficient writes are stalled until the active/shadow bank exchange completes.
+    Once coeff_commit_pending=1, the shadow bank is frozen. New coefficient writes are stalled until the active/shadow bank overwrite completes.
     The bank exchange occurs atomically only after the current output sample has finished processing. After the exchange, the previous active bank becomes the new shadow bank and coefficient writes may resume.
+
+    Config update can be concurrent to COEFF_WRITE but must not when DSP is in processing state. If DSP is in processing state, set config_pending to 1 and latch the data, update when DSP returns IDLE. 
+
+    Status Clear: TBD
+    
   Further Detail TBD
 
 ### **4. DSP Engine** 
