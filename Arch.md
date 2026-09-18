@@ -10,6 +10,27 @@ The asic project aims as a configurable DSP engine for audio processing. The sys
 
 676767676767676767676767676767
 
+### **IO**
+
+  RX DTR Link:
+  ui_in[7:0]: link
+  uio[0] oe[0] = 0: valid
+  uo[0] : ready
+
+  TX:
+  uo[7]: Pmod output
+
+  Status/Flags:
+  uo[6]: Config_Updated
+  uo[5]: Coeff_Updated
+  uo[4]: Soft_Reset_Complete
+  uo[3]: Coeff_Pending
+  uo[2]: Config_Pending
+  uo[1]: Busy
+
+  uio[7:1], oe[7:1]: Reserved
+  
+
 ### **1. Module Interface**
   Module interface should use ready/valid handshake
   | Interface       | Signals                                                       | Purpose                                         |
@@ -86,7 +107,7 @@ The CONTROL packet is a single-flit packet (`LEN = 0`). The command is encoded i
 | `00` | `Reserved` |Reserved |
 | `01` | `COMMIT_COEFF` | Requests atomic exchange of active and shadow coefficient banks after the current sample finishes processing |
 | `10` | `RESET_FILTER` | Clears FIR sample history/state registers |
-| `11` | `Reserved` |Reserved |
+| `11` | `STATUS_CLEAR` | Clear the status flags to the host, what to clear TBD |
 
 
 ### CONFIG Packet
@@ -195,7 +216,7 @@ The maximum DATA packet contains 15 PCM samples:
 
 
 ### **6. Status Signal**
-   Status Signal will be used to display chip status directly as long latency sticky flags. Status flag must only be reset through (`Status_Clear`), otherwise the flag must not be cleared.
+   Status Signal will be used to display chip status directly as low latency sticky flags for asymetric system syncrhonization. Status flag must only be reset through (`Status_Clear`), otherwise the flag must not be cleared.
    
 ### **7. Verification**
    By inspection the SoC will work
