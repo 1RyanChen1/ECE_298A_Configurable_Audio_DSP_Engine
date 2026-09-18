@@ -195,13 +195,15 @@ The maximum DATA packet contains 15 PCM samples:
    By inspection the SoC will work
 
 **8. Scheduled Work & Modules**
+
   Impl/DV
+    
     Rx_packet_parser
     DSP
     Output_Tx
     Config/Coeff/Control_reg_bank
 
-  Integraion/Verification/Tapeout Closure
+    Integraion/Verification/Tapeout Closure
    
    
   
