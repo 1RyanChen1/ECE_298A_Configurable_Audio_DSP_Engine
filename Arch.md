@@ -176,7 +176,7 @@ The maximum DATA packet contains 15 PCM samples:
     The bank exchange occurs atomically only after the current output sample has finished processing. After the exchange, the previous active bank becomes the new shadow bank and coefficient writes may resume.
   Further Detail TBD
 
-### **4. DSP Engine**
+### **4. DSP Engine** 
 
    The DSP engine implements a configurable 0–8 tap FIR filter operating on 16-bit PCM samples and 16-bit coefficients. NUM_TAPS = 0 bypasses the filter, while NUM_TAPS = 1...8 determines the number of FIR taps evaluated for each output sample.
 
@@ -193,6 +193,15 @@ The maximum DATA packet contains 15 PCM samples:
    
 ### **7. Verification**
    By inspection the SoC will work
+
+**8. Scheduled Work & Modules**
+  Impl/DV
+    Rx_packet_parser
+    DSP
+    Output_Tx
+    Config/Coeff/Control_reg_bank
+
+  Integraion/Verification/Tapeout Closure
    
    
   
