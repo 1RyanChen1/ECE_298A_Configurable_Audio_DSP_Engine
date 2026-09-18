@@ -194,7 +194,7 @@ The maximum DATA packet contains 15 PCM samples:
 ### **7. Verification**
    By inspection the SoC will work
 
-**8. Scheduled Work & Modules**
+### **8. Scheduled Work & Modules**
 
   Impl/DV
     
