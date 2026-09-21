@@ -2,7 +2,7 @@
 
 ### **Overview**
 
-The asic project aims as a configurable DSP engine for audio processing. The system consists of a RP 2040/2035 on the tinytapeout board(or any other electrically compatible MCU/FPGA SoC) that supplies the clock source for the system and transmits packetized data over an 8-bit DTR interface, and the audio pmod from TinyTapeout Store. The receiver will reassemble the 16 bits word and forward it to packet parser. The parser routes PCM samples directly to the DSP engine, configuration packets to the DSP configuration registers, and coefficient writes to a shadow coefficient bank. The active coefficient bank must not be modified during FIR processing. A COMMIT_COEFF command creates a pending coefficient update; the active and shadow coefficient banks are atomically exchanged only after processing of the current sample has completed. The configurable DSP will time multiplex the operation through a time-multiplexed 16-bit MAC datapath and forward the result to a sigma delta/PWM output 1 bit TX for Audio Pmod.
+The asic project aims as a configurable DSP engine for audio processing. The system consists of a RP 2040/2035 on the tinytapeout board(or any other electrically compatible MCU/FPGA SoC) that supplies the clock source for the system and transmits packetized data over an 8-bit DTR interface, and the audio pmod from TinyTapeout Store. The receiver will reassemble the 16 bits word, the parser routes PCM samples directly to the DSP engine, configuration packets to the DSP configuration registers, and coefficient writes to a shadow coefficient bank. The active coefficient bank must not be modified during FIR processing. A COMMIT_COEFF command creates a pending coefficient update; the active and shadow coefficient banks are atomically exchanged only after processing of the current sample has completed. The configurable DSP will time multiplex the operation through a time-multiplexed 16-bit MAC datapath and forward the result to a sigma delta/PWM output 1 bit TX for Audio Pmod. The host is responsible for PCM sample rate pacing and only submits new PCM samples according to the desired audio sample rate. The ASIC does not implement an independent audio sample-rate scheduler. Backpressure may delay a transfer if the DSP has not completed processing the previous sample.
 
 <img width="1295" height="474" alt="image" src="https://github.com/user-attachments/assets/25d7cd03-5dc6-4c56-9256-78aaae66133d" />
 
@@ -12,34 +12,63 @@ The asic project aims as a configurable DSP engine for audio processing. The sys
 
 ### **IO**
 
-  RX DTR Link:
-  ui_in[7:0]: link
-  uio[0] oe[0] = 0: valid
-  uo[0] : ready
+### IO
 
-  TX:
-  uo[7]: Pmod output
+| Group | TinyTapeout Pin | Direction | Signal | Description |
+|---|---|---|---|---|
+| RX DTR Link | `ui_in[7:0]` | Input | `link[7:0]` | 8-bit DTR data bus from host |
+| RX DTR Link | `uio[0]` | Input | `valid` | Host indicates a valid logical flit |
+| RX DTR Link | `uo[0]` | Output | `ready` | ASIC can accept the next logical flit |
+| Audio TX | `uo[7]` | Output | `pmod_out` | 1-bit sigma delta/PWM output to Audio Pmod |
+| Status | `uo[6]` | Output | `Config_Updated` | Sticky flag indicating a configuration update has been applied |
+| Status | `uo[5]` | Output | `Coeff_Updated` | Sticky flag indicating a coefficient bank update has completed |
+| Status | `uo[4]` | Output | `Protocol_Error` | Sticky protocol/parser error flag |
+| Status | `uo[3]` | Output | `Coeff_Pending` | Coefficient-bank commit is pending |
+| Status | `uo[2]` | Output | `Config_Pending` | Configuration update is pending |
+| Status | `uo[1]` | Output | `Busy` | FIR engine is currently processing a sample |
+| Reserved | `uio[7:1]` | Reserved | — | Reserved for future use |
 
-  Status/Flags:
-  uo[6]: Config_Updated
-  uo[5]: Coeff_Updated
-  uo[4]: Soft_Reset_Complete
-  uo[3]: Coeff_Pending
-  uo[2]: Config_Pending
-  uo[1]: Busy
+Any IO pins serve as Input must have `OE[i] = 0`, any Output pins must have  `OE[i] = 1 when driving the signal`
 
-  uio[7:1], oe[7:1]: Reserved
-  
+#### Live Status
+
+- `Busy`: asserted while the FIR engine is processing a sample.
+- `Coeff_Pending`: asserted while a coefficient-bank commit is pending.
+- `Config_Pending`: asserted while a configuration update is waiting for a safe update boundary.
+
+#### Sticky Status
+
+- `Config_Updated`: set when a pending configuration becomes active.
+- `Coeff_Updated`: set when an active/shadow coefficient-bank exchange completes.
+- `Protocol_Error`: set when an invalid or malformed packet is detected.
+
+Sticky status remains asserted until a `STATUS_CLEAR` control command is accepted.
 
 ### **1. Module Interface**
-  Module interface should use ready/valid handshake
-  | Interface       | Signals                                                       | Purpose                                         |
-| --------------- | ------------------------------------------------------------- | ----------------------------------------------- |
-| PCM data        | `valid`, `ready`, `data[15:0]` | Transfer PCM samples from parser to DSP |
-| Config          | `valid`, `ready`, `num_taps[3:0]`, `out_shift[3:0]`, `sat_en` | Submit a complete pending DSP configuration |
-| Coefficient     | `valid`, `ready`, `idx[2:0]`, `data[15:0]` | Write one coefficient into shadow bank |
-| Control         | `valid`, `ready`, `ctrl_id[1:0]` | Submit control command |
-| Sample boundary | `sample_done` | DSP indicates current output sample is complete |
+
+| Module | Responsibility |
+|---|---|
+| `rx_packet_parser` | Receive the DTR host link, reconstruct 16-bit flits, decode packets, and dispatch PCM/config/coefficient/control transactions |
+| `dsp_state_regs` | Store active/pending configuration, active/shadow coefficient banks, control state, and status flags |
+| `fir_engine` | Process PCM samples using the configured FIR filter |
+| `audio_tx` | Convert processed 16-bit PCM samples into the 1-bit Audio Pmod output |
+
+All transactional interfaces use a ready/valid handshake unless otherwise specified.  
+For a ready/valid interface, a transfer occurs when `valid && ready` are both high.
+
+#### Internal Interfaces
+
+| Interface | Source | Destination | Signals | Purpose |
+|---|---|---|---|---|
+| PCM Input | `rx_packet_parser` | `fir_engine` | `pcm_valid`, `pcm_ready`, `pcm_data[15:0]` | Transfer one signed PCM sample to the FIR engine |
+| Config Write | `rx_packet_parser` | `dsp_state_regs` | `cfg_valid`, `cfg_ready`, `cfg_num_taps[3:0]`, `cfg_out_shift[3:0]`, `cfg_sat_en` | A complete DSP configuration update |
+| Coefficient Write | `rx_packet_parser` | `dsp_state_regs` | `coeff_valid`, `coeff_ready`, `coeff_idx[2:0]`, `coeff_data[15:0]` | Write one coefficient into the shadow coefficient bank |
+| Control | `rx_packet_parser` | `dsp_state_regs` | `ctrl_valid`, `ctrl_ready`, `ctrl_id[1:0]` | Control command |
+| Active Config | `dsp_state_regs` | `DSP` | `num_taps[3:0]`, `out_shift[3:0]`, `sat_en` | Provide the currently active DSP configuration |
+| Filter Reset | `dsp_state_regs` | `DSP` | `filter_reset` | Clear DSP processing/sample-history state |
+| Sample Boundary | `DSP` | `dsp_state_regs` | `sample_done` | Indicates completion of the current PCM |
+| DSP Status | `DSP` | `dsp_state_regs` | `dsp_busy` | Indicates that the DSP engine is processing a sample |
+| Processed PCM | `DSP` | `audio_tx` | `out_valid`, `out_ready`, `out_data[15:0]` | Transfer processed PCM to the audio output block |
 
 
 ### **2. Host Interface**
@@ -107,7 +136,7 @@ The CONTROL packet is a single-flit packet (`LEN = 0`). The command is encoded i
 | `00` | `Reserved` |Reserved |
 | `01` | `COMMIT_COEFF` | Requests atomic exchange of active and shadow coefficient banks after the current sample finishes processing |
 | `10` | `RESET_FILTER` | Clears FIR sample history/state registers |
-| `11` | `STATUS_CLEAR` | Clear the status flags to the host, what to clear TBD |
+| `11` | `STATUS_CLEAR` | Clears all sticky status flags  |
 
 
 ### CONFIG Packet
@@ -199,7 +228,9 @@ The maximum DATA packet contains 15 PCM samples:
 
     Config update can be concurrent to COEFF_WRITE but must not when DSP is in processing state. If DSP is in processing state, set config_pending to 1 and latch the data, update when DSP returns IDLE. 
 
-    Status Clear: TBD
+    PCM timing is host-controlled. The host must pace DATA transfers according to the desired audio sample rate. The ASIC may deassert READY while the DSP is unable to accept another sample.
+
+    Status Clear: Clear all pending status, if there are set at the same cycle as clear, set dominate clear.
     
   Further Detail TBD
 
@@ -216,7 +247,7 @@ The maximum DATA packet contains 15 PCM samples:
 
 
 ### **6. Status Signal**
-   Status Signal will be used to display chip status directly as low latency sticky flags for asymetric system syncrhonization. Status flag must only be reset through (`Status_Clear`), otherwise the flag must not be cleared.
+   Status Signal will be used to display chip status directly as low latency sticky flags for asymetric system syncrhonization. Status flag must only be reset through (`Status_Clear`), otherwise the flag must not be cleared. If clear and set is present at same cycle, set dominate over clear.
    
 ### **7. Verification**
    By inspection the SoC will work
@@ -228,7 +259,7 @@ The maximum DATA packet contains 15 PCM samples:
     Rx_packet_parser
     DSP
     Output_Tx
-    Config/Coeff/Control_reg_bank
+    Dsp_state_regs
 
     Integraion/Verification/Tapeout Closure
    
