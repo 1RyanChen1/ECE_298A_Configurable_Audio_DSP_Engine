@@ -10,7 +10,7 @@ The asic project aims as a configurable DSP engine for audio processing. The sys
 
 
 
-### **IO**
+
 
 ### IO
 
