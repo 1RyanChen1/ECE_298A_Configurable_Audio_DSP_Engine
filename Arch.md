@@ -254,6 +254,9 @@ The maximum DATA packet contains 15 PCM samples:
 
 ### **8. Scheduled Work & Modules**
 
+<img width="1211" height="232" alt="image" src="https://github.com/user-attachments/assets/89100635-e422-4b1a-95ee-1ac1832a4dcc" />
+
+
   Impl/DV
     
     Rx_packet_parser
