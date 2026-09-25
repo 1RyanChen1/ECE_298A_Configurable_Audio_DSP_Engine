@@ -97,6 +97,10 @@ READY should indicate receiver availability independently of the currently trans
 <img width="1443" height="314" alt="image" src="https://github.com/user-attachments/assets/057ca978-3656-4313-ae85-e69de4c8cf78" />
 An example of DTR handshake waveform
 
+<img width="1035" height="510" alt="image" src="https://github.com/user-attachments/assets/389e047f-b669-48fc-a179-a107bf7e0af9" />
+An possible DTR Impl
+
+
 ### **3. Packet Format**
 
    The communication between host and the system is packet based. Each packet is length varied can contains up to 16 flits(include header flit), length specifies the number of payload flits following the header.    Therefore total packet size is LEN + 1 flits, with a maximum packet size of 16 flits / 32 bytes.
@@ -239,7 +243,7 @@ The maximum DATA packet contains 15 PCM samples:
    The DSP engine implements a configurable 0–8 tap FIR filter operating on 16-bit PCM samples and 16-bit coefficients. NUM_TAPS = 0 bypasses the filter, while NUM_TAPS = 1...8 determines the number of FIR taps evaluated for each output sample.
 
   To reduce area and improve timing closure, the engine uses a time-multiplexed 8×8 pipelined multiplier rather than a full combinational 16×16 multiplier. Each signed 16×16 multiplication is decomposed into four 8×8 partial products, which are shifted and accumulated to reconstruct the full product. The resulting products are then accumulated across the configured FIR taps. Pipelining stage could vary depends on timing slack (which Yosys does not tell you)/resume fanciness.
-  16'bit fixed point
+  16'bit fixed point. Becareful on signed.
 
   Microarch
   <img width="1314" height="674" alt="image" src="https://github.com/user-attachments/assets/49617718-62dd-463c-b4e4-5b57dafd765e" />
