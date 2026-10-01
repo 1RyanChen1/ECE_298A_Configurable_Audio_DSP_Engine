@@ -270,11 +270,11 @@ The maximum DATA packet contains 15 PCM samples:
 | `Writing Modules` | `dsp_stste_regs` | `Ian Huang` |
 | `Writing Modules` | `fir_engine` | `Sebastian Nava Urribarri` |
 | `Writing Modules` | `audio_tx` | `Ryan Chen` |
-| `[Integration/Implementation` | `N/A` | `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
+| `Integration/Implementation` | `N/A` | `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
 | `Writing Test bench` | `N/A` | `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
 | `Documentation` | `N/A` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen`  |
 | `Testing` | `N/A` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen`  |
-| `Final Project Presentation & Preperation` | `TYPE` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
+| `Final Project Presentation & Preperation` | `N/A` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
 
     
 
