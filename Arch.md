@@ -264,21 +264,18 @@ The maximum DATA packet contains 15 PCM samples:
 <img width="1211" height="232" alt="image" src="https://github.com/user-attachments/assets/89100635-e422-4b1a-95ee-1ac1832a4dcc" />
 ### **Assignments:**
 
-| Header Bits | Field | Description |
+| Assignment | Description | Author |
 |---|---|---|
-| `[15:6]` | `RESERVED` | Must be transmitted as `0`; ignored by receiver |
-| `[5:2]` | `LEN` | Number of PCM samples contained in the packet (`1–15`) |
-| `[1:0]` | `TYPE` | Must be `11` |
+| `Writing Modules` | `rx_packet_parser` | `Tobias DeVries` |
+| `Writing Modules` | `dsp_stste_regs` | `Ian Huang` |
+| `Writing Modules` | `fir_engine` | `Sebastian Nava Urribarri` |
+| `Writing Modules` | `audio_tx` | `Ryan Chen` |
+| `[Integration/Implementation` | `N/A` | `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
+| `Writing Test bench` | `N/A` | `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
+| `Documentation` | `N/A` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen`  |
+| `Testing` | `N/A` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen`  |
+| `Final Project Presentation & Preperation` | `TYPE` |  `Tobias DeVries, Ian Huang, Sebastian Nava Urribari, Ryan Chen` |
 
-    rx_packet_parser: Tobias DeVries
-    dsp_stste_regs: Ian Huang
-    fir engine: Sebastian Nava Urribarri
-    audio_tx: Ryan Chen
-    Implementation: All
-    Writing Test bench: All
-    Documentation: All
-    Testing: All
-    Final Project Presentation & Prep: All
     
 
   Impl/DV
