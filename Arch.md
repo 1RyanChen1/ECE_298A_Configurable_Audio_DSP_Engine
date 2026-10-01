@@ -262,7 +262,17 @@ The maximum DATA packet contains 15 PCM samples:
 ### **8. Scheduled Work & Modules**
 
 <img width="1211" height="232" alt="image" src="https://github.com/user-attachments/assets/89100635-e422-4b1a-95ee-1ac1832a4dcc" />
-
+### **Assignments:**
+    rx_packet_parser: Tobias DeVries
+    dsp_stste_regs: Ian Huang
+    fir engine: Sebastian Nava Urribarri
+    audio_tx: Ryan Chen
+    Implementation: All
+    Writing Test bench: All
+    Documentation: All
+    Testing: All
+    Final Project Presentation & Prep: All
+    
 
   Impl/DV
     
