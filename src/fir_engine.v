@@ -16,6 +16,11 @@ module fir_engine #(
     output reg out_valid, //if the output is valid
     input  wire out_ready // if the output pcm is ready to be sent
 );
+    reg signed [15:0] sample_history [0:MAX_TAPS-1]; // previous samples to move along the multiplier
+    reg [3:0] tap_counter; // to keep track of how many taps have been proceesed through the multiply-accumulate
+    reg signed [31:0] accumulator; // accumulated sum, which then gates shifted
+    reg [3:0] tap_index; // select for the tap mux
+    reg signed [15:0] current_sample; // current pcm sample
 
 endmodule
 
