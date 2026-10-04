@@ -21,6 +21,29 @@ module fir_engine #(
     reg signed [31:0] accumulator; // accumulated sum, which then gates shifted
     reg [3:0] tap_index; // select for the tap mux
     reg signed [15:0] current_sample; // current pcm sample
+    reg [1:0] sample_processor_counter;
 
+always @(posedge) begin
+
+   // first check for reset
+    if (rst || filter_reset) begin
+            
+        accumulator <= 32'sd0;
+        tap_index <= 4'b0;
+        current_sample <= 16'sd0;
+        out_data <= 16'sd0;
+        out_valid <= 1'b0;
+        sample_done <= 1'b0;
+        dsp_busy <= 1'b0;
+        out_ready <= 1'b0;
+        for (i = 0; i < MAX_TAPS; i = i + 1) begin 
+            sample_history[i] <= 16'sd0;
+        end 
+    end
+
+    if (sample_processor_counter == 1)begin
+
+    end 
+
+end
 endmodule
-
