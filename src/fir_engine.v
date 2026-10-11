@@ -22,7 +22,8 @@ module fir_engine #(
     reg signed [31:0] accumulator; // accumulated sum, which then gates shifted
     reg signed [15:0] current_sample; // current pcm sample
     reg signed [15:0] current_coefficient; // current pcm sample
-
+    reg signed [7:0] current_8_bits_coefficient; // current pcm sample
+    reg signed [7:0] current_8_bits_sample; // current pcm sample
 
     //mux control signals
     reg [3:0] coefficient_select_mux;
@@ -33,7 +34,7 @@ module fir_engine #(
     // counters and flags 
     reg grab_values;
     reg [3:0] sample_processor_counter; // large counter for overall proccessing 
-    reg [2:0] high_and_low_counter; // counter to check if youve done lower lower, upper upper etc;
+    reg [1:0] high_and_low_counter; // counter to check if youve done lower lower, upper upper etc;
 
 
 
@@ -94,7 +95,22 @@ always @(posedge) begin
     end 
 
     // start the multiplication cycle
-    case()
+    if(grab_values && high_and_low_counter < 5)begin
+        case(upper_or_lower_select_coefficient)
+        1'b0: current_8_bits_coefficient <= current_coefficient [7:0];
+        1'b1: current_8_bits_coefficient <= current_coefficient [15:8];
+        default:
+        endcase
+
+        case(upper_or_lower_select_sample)
+        1'b0: current_8_bits_sample <= current_sample [7:0];
+        1'b1: current_8_bits_sample <= current_sample [15:8];
+        default:
+        endcase
+
+        high_and_low_counter <= high_and_low_counter + 1;
+    end
+
 
 
 
