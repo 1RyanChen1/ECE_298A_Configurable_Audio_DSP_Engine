@@ -35,6 +35,7 @@ module fir_engine #(
     reg grab_values;
     reg [3:0] sample_processor_counter; // large counter for overall proccessing 
     reg [1:0] high_and_low_counter; // counter to check if youve done lower lower, upper upper etc;
+    reg signed [15:0] multiplication_result; // intermediary mulplication result
 
 
 
@@ -65,7 +66,7 @@ always @(posedge) begin
         end 
     end
 
-    if (!grab_values) begin
+    if (!grab_values && pcm_valid && pcm_ready) begin
         grab_values <= 1'b1;
         sample_processor_counter <= sample_processor_counter + 1;
         // selecting the current sample
@@ -81,7 +82,7 @@ always @(posedge) begin
             default: current_sample <= sample_history[0];  // Default case handles undefined states
         endcase
 
-        case (coefficient_select_mux_select_mux)
+        case (coefficient_select_mux)
             3'b000:  current_coefficient <= coeff[0];
             3'b001:  current_coefficient <= coeff[1];
             3'b010:  current_coefficient <= coeff[2];
@@ -111,14 +112,37 @@ always @(posedge) begin
         high_and_low_counter <= high_and_low_counter + 1;
     end
 
+    multiplication_result <= current_coefficient * current_coefficient
 
+    if(upper_or_lower_select_coefficient && upper_or_lower_select_sample)begin
+        multiplication_result <= multiplication_result >> 16
+        accumulator <= multiplication_result + accumulator
+    end
+    else begin
+    multiplication_result <= multiplication_result >> 8 * (upper_or_lower_select_coefficient || upper_or_lower_select_sample)
+    accumulator <= multiplication_result + accumulator
+    end
 
+    if (high_and_low_counter < 5 && grab_values)begin
+        high_and_low_counter <= high_and_low_counter + 1;
+        upper_or_lower_select_coefficient <= upper_or_lower_select_coefficient + 1;
+        upper_or_lower_select_sample <= upper_or_lower_select_sample + 1;
+    end
 
+    if ( high_and_low_counter > 5 && sample_processor_counter < 8) begin
+        high_and_low_counter <= 0;
+        sample_processor_counter <= sample_processor_counter + 1;
+        sample_select_mux <= sample_select_mux + 1;
+        coefficient_select_mux <= coefficient_select_mux + 1;
+    end 
 
-    // go through each sample sequntially
-    // for each sample, take the lower 8 bits and multiply them with eaach of the bits
-    // shift where it feels appropriate 
-    // feed this to an accumulator register
+    if(sample_processor_counter > 8) begin
+        sampled_done <= 1;
+        output_pcm_data <= accumulator / 16 // TEMPORARY FIGURE HOW TO PROPERLY SCALE THIS SO IT SOUNDS GOOD
+        out_ready <= 1;
+        out_valid <= 1;
+    end
+
     // then create an output ready signal to feed to a safety register or smth lkke thatt?
 
 end
