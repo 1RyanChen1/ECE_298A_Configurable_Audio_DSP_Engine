@@ -13,9 +13,24 @@ module fir_engine #(
     output reg out_valid, //if the output is valid
     input  wire out_ready // if the output pcm is ready to be sent
     input  wire signed [15:0] pcm_data, // the actual data beingg sent
+`ifdef ARRAY_COEFF_PORT
     input  wire signed [15:0] coeff [0:7], // actual coefficiients
-    output reg signed [15:0] out_data, // pcm data after it has already been proccessed
+`else
+    input  wire [127:0] coeff_flat, // actual coefficiients, flattened: coeff_flat[16*i +: 16] is coefficient i
+`endif
+    output reg signed [15:0] out_data // pcm data after it has already been proccessed
 );
+`ifndef ARRAY_COEFF_PORT
+    // rebuild the array view of the flat port, so the rest of the code can keep using coeff[i]
+    wire signed [15:0] coeff [0:7];
+    genvar gi;
+    generate
+        for (gi = 0; gi < 8; gi = gi + 1) begin : unpack_coeff
+            assign coeff[gi] = coeff_flat[16*gi +: 16];
+        end
+    endgenerate
+`endif
+
     // sums and intermediary values for coefficients and samples
     reg signed [15:0] sample_history [0:7]; // previous samples, 0 is latest, 7 is the oldest
     reg [3:0] tap_counter; // to keep track of how many taps have been proceesed through the multiply-accumulate
@@ -87,13 +102,11 @@ module fir_engine #(
 
     // output scaling (arithmetic shift, then saturate or truncate)
     wire signed [34:0] shifted_acc = accumulator >>> out_shift;
-    wire signed [15:0] scaled_out  = !sat_en ? shifted_acc[15:0] :
-    (shifted_acc >  35'sd32767)  ? 16'sh7FFF :
-    (shifted_acc < -35'sd32768)  ? 16'sh8000 :
-    hifted_acc[15:0];
+    wire signed [15:0] scaled_out  = !sat_en ? shifted_acc[15:0] : (shifted_acc >  35'sd32767)  ? 16'sh7FFF : (shifted_acc < -35'sd32768)  ? 16'sh8000 : shifted_acc[15:0];
 
-always @(posedge) begin
- // shuffling the coefficients up one in the sample history bank
+always @(posedge clk) begin
+
+    sample_done <= 1'b0; // only a 1 cycle pulse
 
    // first check for reset
     if (rst || filter_reset) begin   
@@ -116,11 +129,6 @@ always @(posedge) begin
             sample_history[i] <= 16'sd0;
         end 
     end
-
-always @(posedge clk) begin
-
-    sample_done <= 1'b0; // only a 1 cycle pulse
-
     else begin
 
         // output was taken by the next block
@@ -223,8 +231,5 @@ always @(posedge clk) begin
         end
     end
 end
-
-end
 endmodule
-
 
