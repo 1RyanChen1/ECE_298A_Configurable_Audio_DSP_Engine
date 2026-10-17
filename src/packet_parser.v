@@ -111,6 +111,37 @@ module FSM(
         endcase
     end
 
+module payload_counter(
+
+    input            clk,
+    input            rst_n,
+    input            load_cnt,
+    input            dec_cnt,
+    input      [3:0] load_val,
+    
+    output           cnt_is_zero
+    
+);
+
+    reg [3:0] count;
+    
+    always@(posedge clk or negedge rst_n) begin
+        if(!rst_n) begin
+            count <= 4'b0000;
+        end else if(load_cnt) begin
+          count <= load_val - 4'b0001;
+         end else if(dec_cnt && (count > 4'b0000)) begin
+            count <= count - 4'b0001;
+        end
+    end
+    
+    assign cnt_is_zero = (count == 4'b0000);
+    
+endmodule
+
+
+
+    
 
 endmodule
 
