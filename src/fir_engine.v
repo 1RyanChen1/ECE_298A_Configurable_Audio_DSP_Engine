@@ -196,7 +196,7 @@ always @(posedge clk) begin
                         3'b101:  current_sample <= sample_history[5];
                         3'b110:  current_sample <= sample_history[6];
                         3'b111:  current_sample <= sample_history[7];
-                        default: current_sample <= sample_history[0];  // Default case handles undefined states
+                        default: current_sample <= sample_history[0];  
                     endcase
 
                     case (coefficient_select_mux)
@@ -208,12 +208,12 @@ always @(posedge clk) begin
                         3'b101:  current_coefficient <= coeff[95:80];
                         3'b110:  current_coefficient <= coeff[111:96];
                         3'b111:  current_coefficient <= coeff[127:112];
-                        default: current_coefficient <= coeff[15:0];  // Default case handles undefined states
+                        default: current_coefficient <= coeff[15:0];  
                     endcase
                 end
             end
             else begin
-                // two extra cycles: one to add the last product, one to scale the result
+                // two extra cycle one to add the last product one to scale the result
                 sample_processor_counter <= sample_processor_counter + 1;
             end
 
