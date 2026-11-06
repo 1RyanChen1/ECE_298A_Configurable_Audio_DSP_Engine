@@ -6,7 +6,7 @@ project:
   description: "Configurable 8-tap FIR audio DSP with packetized DTR input and 1-bit audio output"
   language: "SystemVerilog"
   clock_hz: 25000000
-  tiles: "2x2"
+  tiles: "1x2"
   top_module: "tt_um_example"
 
   # Each compiled source must be present in src/.
