@@ -1,57 +1,51 @@
 # Tiny Tapeout project information
 project:
-  title:        "Audio DSP"      # Project title
-  author:       "John Long"      # Your name
-  discord:      ""      # Your discord username, for communication and automatically assigning you a Tapeout role (optional)
-  description:  "Audio DSP"      # One line description of what your project does
-  language:     "Verilog" # other examples include SystemVerilog, Amaranth, VHDL, etc
-  clock_hz:     0       # Clock frequency in Hz (or 0 if not applicable)
+  title: "Audio DSP"
+  author: "John Long"
+  discord: ""
+  description: "Configurable 8-tap FIR audio DSP with packetized DTR input and 1-bit audio output"
+  language: "SystemVerilog"
+  clock_hz: 25000000
+  tiles: "2x2"
+  top_module: "tt_um_example"
 
-  # How many tiles your design occupies? A single tile is about 340x160 uM.
-  tiles: "2x2"          # Valid values: 1x1, 1x2, 2x2, 3x2, 4x2, 3x4 or 4x4
-
-  # Your top module name must start with "tt_um_". Make it unique by including your github username:
-  top_module:  "tt_um_example"
-
-  # List your project's source files here.
-  # Source files must be in ./src and you must list each source file separately, one per line.
-  # Don't forget to also update `PROJECT_SOURCES` in test/Makefile.
+  # Each compiled source must be present in src/.
+  # dsp_state_regs.v is an integration dependency still to be implemented/added.
   source_files:
     - "project.v"
-    - "mac.v"
+    - "packet_parser.v"
+    - "dsp_state_regs.v"
+    - "fir_engine.v"
+    - "output_tx.v"
 
-# The pinout of your project. Leave unused pins blank. DO NOT delete or add any pins.
-# This section is for the datasheet/website. Use descriptive names (e.g., RX, TX, MOSI, SCL, SEG_A, etc.).
-pinout:
-  # Inputs
-  ui[0]: "rx_"
-  ui[1]: "rx_"
-  ui[2]: "rx_"
-  ui[3]: "rx_"
-  ui[4]: "rx_"
-  ui[5]: "rx_"
-  ui[6]: "rx_"
-  ui[7]: "rx_"
+  # Pinout for documentation. Do not add or remove pin entries.
+  pinout:
+    ui[0]: "dtr_link[0]"
+    ui[1]: "dtr_link[1]"
+    ui[2]: "dtr_link[2]"
+    ui[3]: "dtr_link[3]"
+    ui[4]: "dtr_link[4]"
+    ui[5]: "dtr_link[5]"
+    ui[6]: "dtr_link[6]"
+    ui[7]: "dtr_link[7]"
 
-  # Outputs
-  uo[0]: "rx_"
-  uo[1]: ""
-  uo[2]: ""
-  uo[3]: ""
-  uo[4]: ""
-  uo[5]: ""
-  uo[6]: ""
-  uo[7]: ""
+    uo[0]: "dtr_ready"
+    uo[1]: "dsp_busy"
+    uo[2]: "config_pending"
+    uo[3]: "coeff_pending"
+    uo[4]: "protocol_error"
+    uo[5]: "coeff_updated"
+    uo[6]: "config_updated"
+    uo[7]: "audio_out"
 
-  # Bidirectional pins
-  uio[0]: "rx_"
-  uio[1]: ""
-  uio[2]: ""
-  uio[3]: ""
-  uio[4]: ""
-  uio[5]: ""
-  uio[6]: ""
-  uio[7]: ""
+    uio[0]: "dtr_valid"
+    uio[1]: ""
+    uio[2]: ""
+    uio[3]: ""
+    uio[4]: ""
+    uio[5]: ""
+    uio[6]: ""
+    uio[7]: ""
 
-# Do not change!
+# Do not change the YAML version.
 yaml_version: 6
