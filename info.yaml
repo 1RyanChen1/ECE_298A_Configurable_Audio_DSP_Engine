@@ -10,7 +10,6 @@ project:
   top_module: "tt_um_example"
 
   # Each compiled source must be present in src/.
-  # dsp_state_regs.v is an integration dependency still to be implemented/added.
   source_files:
     - "project.v"
     - "packet_parser.v"
