@@ -6,12 +6,8 @@
  *   src/fir_engine.v   : fir_engine
  *   src/output_tx.v   : out_tx
  *
- * Dependency not yet verified in public repository:
- *   dsp_state_regs  (expected interface documented below)
- *
- * NOTE: This is wiring only. The top is NOT ready to compile until the
- * state-register block exists and fir_engine.v's reported syntax/indexing
- * problems are fixed. See TOP_INTEGRATION_NOTES.md.
+ * The dsp_state_regs.v implementation now matches these ports.
+ * The revised fir_engine.v included in this bundle fixes those issues.
  */
 `default_nettype none
 
@@ -30,6 +26,8 @@ module tt_um_example (
     wire        host_ready;
     wire        pcm_valid;
     wire        pcm_ready;
+    wire        fir_pcm_ready;
+    wire        fir_pcm_valid;
     wire [15:0] pcm_data;
 
     wire        cfg_valid;
@@ -58,6 +56,14 @@ module tt_um_example (
     wire        coeff_updated;
     wire        config_pending;
     wire        coeff_pending;
+
+    // Do not start another PCM sample on the edge that updates the DSP
+    // state or resets history. The parser and FIR must observe identical
+    // handshake events (otherwise a sample can be silently dropped).
+    wire block_pcm = config_pending || coeff_pending || filter_reset ||
+                     cfg_valid || ctrl_valid;
+    assign fir_pcm_valid = pcm_valid && !block_pcm;
+    assign pcm_ready = fir_pcm_ready && !block_pcm;
 
     // -------- FIR to audio TX --------
     wire        dsp_busy;
@@ -97,7 +103,7 @@ module tt_um_example (
 
     // Pending-state handling, atomic config activation, coefficient-bank
     // commit, RESET_FILTER and STATUS_CLEAR are owned by this module.
-    // Its implementation/actual port list must be confirmed before compile.
+    // See dsp_state_regs.v for its commit and status-clear behavior.
     dsp_state_regs u_dsp_state_regs (
         .clk              (clk),
         .rst_n            (rst_n),
@@ -139,8 +145,8 @@ module tt_um_example (
         .num_taps    (active_num_taps),
         .out_shift   (active_out_shift),
         .sat_en      (active_sat_en),
-        .pcm_valid   (pcm_valid),
-        .pcm_ready   (pcm_ready),
+        .pcm_valid   (fir_pcm_valid),
+        .pcm_ready   (fir_pcm_ready),
         .pcm_data    (pcm_data),
         .dsp_busy    (dsp_busy),
         .sample_done (sample_done),

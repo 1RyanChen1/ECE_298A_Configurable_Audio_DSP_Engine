@@ -1,27 +1,50 @@
-module fir_engine #(
-)(
-    input  wire clk, // clk for the module
-    input  wire rst, // reset
-    input  wire filter_reset, // reset the filter setings
-    input  wire [3:0] num_taps, // number of taps being used
-    input  wire [3:0] out_shift, // how much shifting is done for the signal
-    input  wire sat_en, // saturation enable signal
-    input  wire pcm_valid,// if the data is valid for this cycle
-    output wire pcm_ready, // if the data is ready 
-    output wire dsp_busy, // if the engine is currently proccesign samples
-    output reg sample_done, // if the sample is finished being proccesing
-    output reg out_valid, //if the output is valid
-    input  wire out_ready // if the output pcm is ready to be sent
-    input  wire signed [15:0] pcm_data, // the actual data beingg sent
+// Configurable 0..8 tap FIR engine.
+//
+// Interface matches src/project.v and the original fir_engine.v.
+// - Signed 16-bit input samples and coefficients.
+// - One UNSIGNED 8x8 physical multiplier, time-multiplexed over four
+//   partial products for each signed 16x16 multiplication.
+// - Separate signed 32-bit partial-product accumulator (one tap) and
+//   signed 35-bit FIR accumulator (all taps).
+// - Host controls the PCM sample rate. This block accepts a new sample
+//   only when idle and its prior output can be consumed.
+// - out_valid/out_data are held stable under output backpressure.
+// - sample_done pulses when processing finishes, NOT when audio TX
+//   consumes the output.
+// - rst and filter_reset are synchronous active-high resets.
+//
+// Fixed-point convention: multiply two signed 16-bit integers, add the
+// full-precision products, arithmetic-right-shift by out_shift (0..15),
+// then saturate to signed 16 bits if sat_en=1, otherwise truncate.
+// No rounding or coefficient-specific Q-format is assumed here.
+//
+// ARRAY_COEFF_PORT keeps compatibility with the optional original
+// unpacked-array coefficient interface; default uses coeff_flat[127:0].
+`default_nettype none
+
+module fir_engine (
+    input  wire               clk,
+    input  wire               rst,
+    input  wire               filter_reset,
+    input  wire [3:0]         num_taps,
+    input  wire [3:0]         out_shift,
+    input  wire               sat_en,
+    input  wire               pcm_valid,
+    output wire               pcm_ready,
+    output wire               dsp_busy,
+    output reg                sample_done,
+    output reg                out_valid,
+    input  wire               out_ready,
+    input  wire signed [15:0] pcm_data,
 `ifdef ARRAY_COEFF_PORT
-    input  wire signed [15:0] coeff [0:7], // actual coefficiients
+    input  wire signed [15:0] coeff [0:7],
 `else
-    input  wire [127:0] coeff_flat, // actual coefficiients, flattened: coeff_flat[16*i +: 16] is coefficient i
+    input  wire [127:0]       coeff_flat,
 `endif
-    output reg signed [15:0] out_data // pcm data after it has already been proccessed
+    output reg signed [15:0]  out_data
 );
+
 `ifndef ARRAY_COEFF_PORT
-    // rebuild the array view of the flat port, so the rest of the code can keep using coeff[i]
     wire signed [15:0] coeff [0:7];
     genvar gi;
     generate
@@ -31,205 +54,178 @@ module fir_engine #(
     endgenerate
 `endif
 
-    // sums and intermediary values for coefficients and samples
-    reg signed [15:0] sample_history [0:7]; // previous samples, 0 is latest, 7 is the oldest
-    reg [3:0] tap_counter; // to keep track of how many taps have been proceesed through the multiply-accumulate
-    reg signed [34:0] accumulator; // accumulated sum, which then gates shifted
-    reg signed [15:0] current_sample; // current pcm sample
-    reg signed [15:0] current_coefficient; // current pcm sample
-    reg [7:0] current_8_bits_coefficient; // current pcm sample
-    reg [7:0] current_8_bits_sample; // current pcm sample
+    localparam [2:0] S_IDLE     = 3'd0;
+    localparam [2:0] S_PARTIAL  = 3'd1; // issue one 8x8 partial product each cycle
+    localparam [2:0] S_DRAIN    = 3'd2; // accumulate last registered partial product
+    localparam [2:0] S_TAP_ADD  = 3'd3; // add completed 16x16 result to FIR sum
+    localparam [2:0] S_FINISH   = 3'd4; // scale, saturate and publish result
 
-    //mux control signals
-    reg [3:0] coefficient_select_mux;
-    reg [3:0] sample_select_mux;
-    wire upper_or_lower_select_coefficient; // mux control signal for upper and lower 8 bits of the coefficient bank
-    wire upper_or_lower_select_sample; // mux control signal for the upper and lower 8 bits for the sample bank
+    reg [2:0] state;
+    reg signed [15:0] sample_history [0:7];
+    reg signed [15:0] current_sample;
+    reg signed [15:0] current_coefficient;
+    reg [3:0] taps_latched;
+    reg [3:0] shift_latched;
+    reg       sat_latched;
+    reg [2:0] tap_idx;
+    reg [1:0] part_idx;
 
-    // counters and flags 
-    reg grab_values;
-    reg [3:0] sample_processor_counter; // large counter for overall proccessing 
-    reg [1:0] high_and_low_counter; // counter to check if youve done lower lower, upper upper etc;
-    reg signed [16:0] multiplication_result; // intermediary mulplication result
+    // One-stage pipeline after the 8x8 multiplier. PARTIAL accumulates
+    // the previous cycle's partial product while issuing the next one.
+    reg signed [16:0] mul_reg;
+    reg [4:0] mul_shift_reg;
+    reg       mul_valid;
 
-    // flags to track if low low, low high etc are being multplitied
-    reg result_ready;
-    reg [1:0] result_position; // 1 if = sample was upper , 0 if coefficient was upper
+    reg signed [31:0] pp_acc;
+    reg signed [34:0] fir_acc;
+
+    wire [3:0] taps_used = (num_taps > 4'd8) ? 4'd8 : num_taps;
+    assign dsp_busy  = (state != S_IDLE);
+    assign pcm_ready = (state == S_IDLE) && (!out_valid || out_ready) &&
+                       !(rst || filter_reset);
+
+    // High bytes are signed 8-bit; low bytes are unsigned 8-bit.
+    // Take each high byte's magnitude before multiplication so the
+    // only multiplier inferred is one unsigned 8x8 multiplier.
+    wire [7:0] sample_byte = part_idx[1] ? current_sample[15:8]
+                                               : current_sample[7:0];
+    wire [7:0] coeff_byte  = part_idx[0] ? current_coefficient[15:8]
+                                               : current_coefficient[7:0];
+    wire sample_negative = part_idx[1] && sample_byte[7];
+    wire coeff_negative  = part_idx[0] && coeff_byte[7];
+    wire [7:0] sample_mag = sample_negative ? (~sample_byte + 8'd1)
+                                            : sample_byte;
+    wire [7:0] coeff_mag  = coeff_negative ? (~coeff_byte + 8'd1)
+                                           : coeff_byte;
+    wire [15:0] mag_product = sample_mag * coeff_mag;
+    wire signed [16:0] signed_partial =
+        (sample_negative ^ coeff_negative) ? -$signed({1'b0, mag_product})
+                                            :  $signed({1'b0, mag_product});
+
+    // part_idx: 00 = lo*lo, 01 = lo*hi, 10 = hi*lo, 11 = hi*hi.
+    wire [4:0] part_shift = (part_idx == 2'b00) ? 5'd0 :
+                            (part_idx == 2'b11) ? 5'd16 : 5'd8;
+    wire signed [31:0] mul_extended = {{15{mul_reg[16]}}, mul_reg};
+    wire signed [31:0] aligned_partial = mul_extended <<< mul_shift_reg;
+
+    wire signed [34:0] pp_extended = {{3{pp_acc[31]}}, pp_acc};
+    wire signed [34:0] fir_shifted = fir_acc >>> shift_latched;
+    wire signed [15:0] final_sample =
+        (!sat_latched) ? fir_shifted[15:0] :
+        (fir_shifted > 35'sd32767)  ? 16'sh7fff :
+        (fir_shifted < -35'sd32768) ? 16'sh8000 :
+                                       fir_shifted[15:0];
 
     integer i;
+    always @(posedge clk) begin
+        if (rst || filter_reset) begin
+            state               <= S_IDLE;
+            current_sample      <= 16'sd0;
+            current_coefficient <= 16'sd0;
+            taps_latched        <= 4'd0;
+            shift_latched       <= 4'd0;
+            sat_latched         <= 1'b0;
+            tap_idx             <= 3'd0;
+            part_idx            <= 2'd0;
+            mul_reg             <= 17'sd0;
+            mul_shift_reg       <= 5'd0;
+            mul_valid           <= 1'b0;
+            pp_acc              <= 32'sd0;
+            fir_acc             <= 35'sd0;
+            out_data            <= 16'sd0;
+            out_valid           <= 1'b0;
+            sample_done         <= 1'b0;
+            for (i = 0; i < 8; i = i + 1)
+                sample_history[i] <= 16'sd0;
+        end else begin
+            sample_done <= 1'b0;
 
-    // handshhake and status
-    assign dsp_busy  = grab_values;
-    assign pcm_ready = !grab_values && !out_valid;
+            if (out_valid && out_ready)
+                out_valid <= 1'b0;
 
-    // caps taps to 8 if signal is more than that
-    wire [3:0] taps_used = (num_taps > 4'd8) ? 4'd8 : num_taps;
+            case (state)
+                S_IDLE: begin
+                    if (pcm_valid && pcm_ready) begin
+                        // History[0] is newest. A new sample shifts old
+                        // history one position towards higher indices.
+                        sample_history[0] <= pcm_data;
+                        for (i = 1; i < 8; i = i + 1)
+                            sample_history[i] <= sample_history[i-1];
 
-    // high_and_low_counter: 0 = lower*lower, 1 = lower sample*upper coeff, 2 = upper sample*lower coeff, 3 = upper*upper
-    assign upper_or_lower_select_coefficient = high_and_low_counter[0];
-    assign upper_or_lower_select_sample      = high_and_low_counter[1];
-
-    // byte going in to the mulitplier mux
-    always @(*) begin
-        case(upper_or_lower_select_coefficient)
-        1'b0: current_8_bits_coefficient = current_coefficient [7:0];
-        1'b1: current_8_bits_coefficient = current_coefficient [15:8];
-        default: current_8_bits_coefficient = 8'b0;
-        endcase
-
-        case(upper_or_lower_select_sample)
-        1'b0: current_8_bits_sample = current_sample [7:0];
-        1'b1: current_8_bits_sample = current_sample [15:8];
-        default: current_8_bits_sample = 8'b0;
-        endcase
-    end
-
-    // unsigned 8x8 multiplier, then put the sign back on the product.
-    wire coefficient_negative = upper_or_lower_select_coefficient & current_8_bits_coefficient[7];
-    wire sample_negative = upper_or_lower_select_sample & current_8_bits_sample[7];
-
-    wire [7:0] coefficient_magnitude = coefficient_negative ? (~current_8_bits_coefficient + 8'd1) : current_8_bits_coefficient;
-    wire [7:0] sample_magnitude = sample_negative? (~current_8_bits_sample + 8'd1) : current_8_bits_sample;
-
-    wire [15:0] unsigned_product = coefficient_magnitude * sample_magnitude; // the 8x8 multiplier
-
-    wire signed [16:0] signed_product = (coefficient_negative ^ sample_negative) ? -$signed({1'b0, unsigned_product}):  $signed({1'b0, unsigned_product});
-
-    // shift the registered partial product into place by how many bits 0 or 8 or 16
-    wire [4:0] result_shift = (result_position[1] ? 5'd8 : 5'd0) + (result_position[0] ? 5'd8 : 5'd0);
-    wire signed [34:0] product_ext = multiplication_result;
-    wire signed [34:0] shifted_product = product_ext <<< result_shift;
-
-    // output scaling (arithmetic shift, then saturate or truncate)
-    wire signed [34:0] shifted_acc = accumulator >>> out_shift;
-    wire signed [15:0] scaled_out  = !sat_en ? shifted_acc[15:0] : (shifted_acc >  35'sd32767)  ? 16'sh7FFF : (shifted_acc < -35'sd32768)  ? 16'sh8000 : shifted_acc[15:0];
-
-always @(posedge clk) begin
-
-    sample_done <= 1'b0; // only a 1 cycle pulse
-
-   // first check for reset
-    if (rst || filter_reset) begin   
-        accumulator <= 35'sd0;
-        tap_counter <= 4'b0;
-        current_sample <= 16'sd0;
-        current_coefficient <= 16'sd0;
-        multiplication_result <= 17'sd0;
-        result_ready <= 1'b0;
-        result_position <= 2'b0;
-        out_data <= 16'sd0;
-        out_valid <= 1'b0;
-        sample_done <= 1'b0;
-        grab_values <= 1'b0;
-        sample_processor_counter <= 4'b0;
-        high_and_low_counter <= 2'b0;
-        coefficient_select_mux <= 4'b0;
-        sample_select_mux <= 4'b0;
-        for (i = 0; i < 8; i = i + 1) begin 
-            sample_history[i] <= 16'sd0;
-        end 
-    end
-    else begin
-
-        // output was taken by the next block
-        if (out_valid && out_ready)
-            out_valid <= 1'b0;
-
-        //code block to set up the taps for recceiving the samples
-        if (!grab_values && pcm_valid && pcm_ready) begin
-            // shuffling the samples up one in the sample history bank
-            sample_history[0] <= pcm_data;
-            for (i = 1; i < 8; i = i + 1) begin
-                sample_history[i] <= sample_history[i-1];
-            end
-            // if 0 taps are specified it just sends sample through directly
-            if (taps_used == 4'd0) begin
-                // bypass, no multiplying
-                out_data <= pcm_data;
-                out_valid <= 1'b1;
-                sample_done <= 1'b1;
-            end
-            else begin // prepping for the multiplcation to happen
-                grab_values <= 1'b1;
-                sample_processor_counter <= 4'b0;
-                high_and_low_counter <= 2'b0;
-                sample_select_mux <= 4'b0;
-                coefficient_select_mux <= 4'b0;
-                accumulator <= 35'sd0;
-                result_ready <= 1'b0;
-                // first sample/coefficient pair
-                current_sample <= pcm_data;
-                current_coefficient <= coeff[15:0];
-            end
-        end
-
-        if (grab_values) begin // if sample has been set up then being the cycle
-            // start the multiplication cycle, product goes into a register
-            multiplication_result <= signed_product;
-            result_position <= high_and_low_counter;
-            result_ready <= (sample_processor_counter < taps_used); // checks to see if the counter has properly gone through alal of the taps
-
-            // add the product registered on the previous cycle
-            if (result_ready)
-                accumulator <= accumulator + shifted_product;
-
-            if (sample_processor_counter < taps_used) begin
-                high_and_low_counter <= high_and_low_counter + 1;
-
-                // advance the muxes one cycle before they are used
-                if (high_and_low_counter == 2'd2) begin
-                    sample_select_mux <= sample_select_mux + 1;
-                    coefficient_select_mux <= coefficient_select_mux + 1;
+                        if (taps_used == 4'd0) begin
+                            // Bypass has no coefficient multiplication and
+                            // must output the ORIGINAL signed PCM sample.
+                            out_data    <= pcm_data;
+                            out_valid   <= 1'b1;
+                            sample_done <= 1'b1;
+                        end else begin
+                            taps_latched        <= taps_used;
+                            shift_latched       <= out_shift;
+                            sat_latched         <= sat_en;
+                            tap_idx             <= 3'd0;
+                            part_idx            <= 2'd0;
+                            current_sample      <= pcm_data;
+                            current_coefficient <= coeff[0];
+                            mul_valid           <= 1'b0;
+                            pp_acc              <= 32'sd0;
+                            fir_acc             <= 35'sd0;
+                            state               <= S_PARTIAL;
+                        end
+                    end
                 end
 
-                // last cycle of this tap, grab the next sample and coefficient
-                if (high_and_low_counter == 2'd3) begin
-                    sample_processor_counter <= sample_processor_counter + 1;
+                S_PARTIAL: begin
+                    // Register this cycle's 8x8 result and its alignment.
+                    mul_reg       <= signed_partial;
+                    mul_shift_reg <= part_shift;
+                    mul_valid     <= 1'b1;
 
-                    // selecting the current sample
-                    case (sample_select_mux)
-                        3'b000:  current_sample <= sample_history[0];
-                        3'b001:  current_sample <= sample_history[1];
-                        3'b010:  current_sample <= sample_history[2];
-                        3'b011:  current_sample <= sample_history[3];
-                        3'b100:  current_sample <= sample_history[4];
-                        3'b101:  current_sample <= sample_history[5];
-                        3'b110:  current_sample <= sample_history[6];
-                        3'b111:  current_sample <= sample_history[7];
-                        default: current_sample <= sample_history[0];  
-                    endcase
+                    // Accumulate the previously registered partial product.
+                    if (mul_valid)
+                        pp_acc <= pp_acc + aligned_partial;
 
-                    case (coefficient_select_mux)
-                        3'b000:  current_coefficient <= coeff[15:0];
-                        3'b001:  current_coefficient <= coeff[31:16];
-                        3'b010:  current_coefficient <= coeff[47:32];
-                        3'b011:  current_coefficient <= coeff[63:48];
-                        3'b100:  current_coefficient <= coeff[79:64];
-                        3'b101:  current_coefficient <= coeff[95:80];
-                        3'b110:  current_coefficient <= coeff[111:96];
-                        3'b111:  current_coefficient <= coeff[127:112];
-                        default: current_coefficient <= coeff[15:0];  
-                    endcase
+                    if (part_idx == 2'd3)
+                        state <= S_DRAIN;
+                    else
+                        part_idx <= part_idx + 2'd1;
                 end
-            end
-            else begin
-                // two extra cycle one to add the last product one to scale the result
-                sample_processor_counter <= sample_processor_counter + 1;
-            end
 
-            if (sample_processor_counter == taps_used + 4'd1) begin
-                sample_done <= 1'b1;
-                out_data <= scaled_out; // TEMPORARY FIGURE HOW TO PROPERLY SCALE THIS SO IT SOUNDS GOOD
-                out_valid <= 1'b1;
-                grab_values <= 1'b0;
-                sample_processor_counter <= 4'b0;
-                high_and_low_counter <= 2'b0;
-                sample_select_mux <= 4'b0;
-                coefficient_select_mux <= 4'b0;
-                result_ready <= 1'b0;
-            end
+                S_DRAIN: begin
+                    // Last partial product from PARTIAL is in mul_reg.
+                    if (mul_valid)
+                        pp_acc <= pp_acc + aligned_partial;
+                    mul_valid <= 1'b0;
+                    state <= S_TAP_ADD;
+                end
+
+                S_TAP_ADD: begin
+                    // pp_acc is now the complete signed 16x16 product.
+                    fir_acc <= fir_acc + pp_extended;
+                    if (({1'b0, tap_idx} + 4'd1) < taps_latched) begin
+                        tap_idx             <= tap_idx + 3'd1;
+                        part_idx            <= 2'd0;
+                        pp_acc              <= 32'sd0;
+                        mul_valid           <= 1'b0;
+                        current_sample      <= sample_history[tap_idx + 3'd1];
+                        current_coefficient <= coeff[tap_idx + 3'd1];
+                        state               <= S_PARTIAL;
+                    end else begin
+                        state <= S_FINISH;
+                    end
+                end
+
+                S_FINISH: begin
+                    // fir_acc includes the last tap (added in S_TAP_ADD).
+                    out_data    <= final_sample;
+                    out_valid   <= 1'b1;
+                    sample_done <= 1'b1;
+                    state       <= S_IDLE;
+                end
+
+                default: state <= S_IDLE;
+            endcase
         end
     end
-end
 endmodule
 
+`default_nettype wire
