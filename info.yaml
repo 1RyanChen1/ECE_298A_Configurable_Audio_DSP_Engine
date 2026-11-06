@@ -17,7 +17,8 @@ project:
     - "fir_engine.v"
     - "output_tx.v"
 
-  # Pinout for documentation. Do not add or remove pin entries.
+  # Pinout matches src/project.v. The system clock and active-low reset
+  # use TinyTapeout dedicated pins (clk and rst_n), not the user I/O pins.
   pinout:
     ui[0]: "dtr_link[0]"
     ui[1]: "dtr_link[1]"
@@ -37,6 +38,7 @@ project:
     uo[6]: "config_updated"
     uo[7]: "audio_out"
 
+    # Bidirectional pins are configured as inputs (uio_oe = 8'b0).
     uio[0]: "dtr_valid"
     uio[1]: ""
     uio[2]: ""
