@@ -19,7 +19,7 @@ project:
 
   # Pinout matches src/project.v. The system clock and active-low reset
   # use TinyTapeout dedicated pins (clk and rst_n), not the user I/O pins.
-  pinout:
+pinout:
     ui[0]: "dtr_link[0]"
     ui[1]: "dtr_link[1]"
     ui[2]: "dtr_link[2]"
