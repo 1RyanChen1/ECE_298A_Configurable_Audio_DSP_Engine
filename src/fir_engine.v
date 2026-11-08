@@ -32,11 +32,12 @@ module fir_engine (
     endgenerate
 `endif
 
-    localparam [2:0] S_IDLE = 3'd0;
-    localparam [2:0] S_PARTIAL = 3'd1; // issue one 8x8 partial product each cycle
-    localparam [2:0] S_DRAIN = 3'd2; // accumulate last registered partial product
-    localparam [2:0] S_TAP_ADD = 3'd3; // add completed 16x16 result to FIR sum
-    localparam [2:0] S_FINISH = 3'd4; // scale, saturate and publish result
+    localparam [2:0] S_IDLE    = 3'd0;
+    localparam [2:0] S_LOAD    = 3'd1; // load M and Q for one 8x8 partial product
+    localparam [2:0] S_MULT    = 3'd2; // 8 cycles of shift-and-add
+    localparam [2:0] S_ACCUM   = 3'd3; // sign, align and add partial product
+    localparam [2:0] S_TAP_ADD = 3'd4; // add completed 16x16 result to FIR sum
+    localparam [2:0] S_FINISH  = 3'd5; // scale, saturate and publish result
 
     reg [2:0] state;
     reg signed [15:0] sample_history [0:7];
@@ -48,11 +49,13 @@ module fir_engine (
     reg [2:0] tap_idx;
     reg [1:0] part_idx;
 
-    // One-stage pipeline after the 8x8 multiplier. PARTIAL accumulates
-    // the previous cycle's partial product while issuing the next one.
-    reg signed [16:0] mul_reg;
-    reg [4:0] mul_shift_reg;
-    reg mul_valid;
+    // Sequential unsigned 8x8 multiplier (shift-and-add).
+    // {sm_acc, sm_q} is the 16-bit product register; sm_q starts as the
+    // multiplier and is consumed bit by bit through sm_q[0].
+    reg [7:0] sm_mcand;
+    reg [7:0] sm_acc;
+    reg [7:0] sm_q;
+    reg [2:0] sm_cnt;
 
     reg signed [31:0] pp_acc;
     reg signed [34:0] fir_acc;
@@ -63,20 +66,23 @@ module fir_engine (
 
     // High bytes are signed 8-bit; low bytes are unsigned 8-bit.
     // Take each high byte's magnitude before multiplication so the
-    // only multiplier inferred is one unsigned 8x8 multiplier.
+    // multiplier only ever sees unsigned 8-bit operands.
     wire [7:0] sample_byte = part_idx[1] ? current_sample[15:8] : current_sample[7:0];
     wire [7:0] coeff_byte  = part_idx[0] ? current_coefficient[15:8] : current_coefficient[7:0];
     wire sample_negative = part_idx[1] && sample_byte[7];
     wire coeff_negative  = part_idx[0] && coeff_byte[7];
     wire [7:0] sample_mag = sample_negative ? (~sample_byte + 8'd1) : sample_byte;
     wire [7:0] coeff_mag  = coeff_negative ? (~coeff_byte + 8'd1) : coeff_byte;
-    wire [15:0] mag_product = sample_mag * coeff_mag;
+
+    // One shift-and-add step: single 8-bit adder, gated by multiplier bit q0.
+    wire [8:0] sm_sum = {1'b0, sm_acc} + ({9{sm_q[0]}} & {1'b0, sm_mcand});
+    wire [15:0] mag_product = {sm_acc, sm_q};
     wire signed [16:0] signed_partial = (sample_negative ^ coeff_negative) ? -$signed({1'b0, mag_product}) :  $signed({1'b0, mag_product});
 
     // part_idx: 00 = lo*lo, 01 = lo*hi, 10 = hi*lo, 11 = hi*hi.
     wire [4:0] part_shift = (part_idx == 2'b00) ? 5'd0 : (part_idx == 2'b11) ? 5'd16 : 5'd8;
-    wire signed [31:0] mul_extended = {{15{mul_reg[16]}}, mul_reg};
-    wire signed [31:0] aligned_partial = mul_extended <<< mul_shift_reg;
+    wire signed [31:0] mul_extended = {{15{signed_partial[16]}}, signed_partial};
+    wire signed [31:0] aligned_partial = mul_extended <<< part_shift;
 
     wire signed [34:0] pp_extended = {{3{pp_acc[31]}}, pp_acc};
     wire signed [34:0] fir_shifted = fir_acc >>> shift_latched;
@@ -93,9 +99,10 @@ module fir_engine (
             sat_latched <= 1'b0;
             tap_idx <= 3'd0;
             part_idx <= 2'd0;
-            mul_reg <= 17'sd0;
-            mul_shift_reg <= 5'd0;
-            mul_valid <= 1'b0;
+            sm_mcand <= 8'd0;
+            sm_acc <= 8'd0;
+            sm_q <= 8'd0;
+            sm_cnt <= 3'd0;
             pp_acc <= 32'sd0;
             fir_acc <= 35'sd0;
             out_data <= 16'sd0;
@@ -132,36 +139,40 @@ module fir_engine (
                             part_idx <= 2'd0;
                             current_sample <= pcm_data;
                             current_coefficient <= coeff[0];
-                            mul_valid <= 1'b0;
                             pp_acc <= 32'sd0;
                             fir_acc <= 35'sd0;
-                            state <= S_PARTIAL;
+                            state <= S_LOAD;
                         end
                     end
                 end
 
-                S_PARTIAL: begin
-                    // Register this cycle's 8x8 result and its alignment.
-                    mul_reg       <= signed_partial;
-                    mul_shift_reg <= part_shift;
-                    mul_valid     <= 1'b1;
-
-                    // Accumulate the previously registered partial product.
-                    if (mul_valid)
-                        pp_acc <= pp_acc + aligned_partial;
-
-                    if (part_idx == 2'd3)
-                        state <= S_DRAIN;
-                    else
-                        part_idx <= part_idx + 2'd1;
+                S_LOAD: begin
+                    // M <= coefficient byte magnitude, Q <= sample byte magnitude, A <= 0.
+                    sm_mcand <= coeff_mag;
+                    sm_q     <= sample_mag;
+                    sm_acc   <= 8'd0;
+                    sm_cnt   <= 3'd0;
+                    state    <= S_MULT;
                 end
 
-                S_DRAIN: begin
-                    // Last partial product from PARTIAL is in mul_reg.
-                    if (mul_valid)
-                        pp_acc <= pp_acc + aligned_partial;
-                    mul_valid <= 1'b0;
-                    state <= S_TAP_ADD;
+                S_MULT: begin
+                    // Conditional add, then shift {sum, Q} right by one.
+                    sm_acc <= sm_sum[8:1];
+                    sm_q   <= {sm_sum[0], sm_q[7:1]};
+                    sm_cnt <= sm_cnt + 3'd1;
+                    if (sm_cnt == 3'd7)
+                        state <= S_ACCUM;
+                end
+
+                S_ACCUM: begin
+                    // {sm_acc, sm_q} holds the finished unsigned 8x8 product.
+                    pp_acc <= pp_acc + aligned_partial;
+                    if (part_idx == 2'd3)
+                        state <= S_TAP_ADD;
+                    else begin
+                        part_idx <= part_idx + 2'd1;
+                        state <= S_LOAD;
+                    end
                 end
 
                 S_TAP_ADD: begin
@@ -171,10 +182,9 @@ module fir_engine (
                         tap_idx <= tap_idx + 3'd1;
                         part_idx <= 2'd0;
                         pp_acc <= 32'sd0;
-                        mul_valid <= 1'b0;
                         current_sample <= sample_history[tap_idx + 3'd1];
                         current_coefficient <= coeff[tap_idx + 3'd1];
-                        state <= S_PARTIAL;
+                        state <= S_LOAD;
                     end else begin
                         state <= S_FINISH;
                     end
