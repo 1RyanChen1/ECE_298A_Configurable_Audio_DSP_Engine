@@ -19,7 +19,7 @@ module fir_engine (
 `else
     input  wire [127:0] coeff_flat,
 `endif
-    output reg signed [15:0]  out_data
+    output reg signed [15:0] out_data
 );
 
 `ifndef ARRAY_COEFF_PORT
@@ -32,175 +32,167 @@ module fir_engine (
     endgenerate
 `endif
 
-    localparam [2:0] S_IDLE    = 3'd0;
-    localparam [2:0] S_LOAD    = 3'd1; // load M and Q for one 8x8 partial product
-    localparam [2:0] S_MULT    = 3'd2; // 8 cycles of shift-and-add
-    localparam [2:0] S_ACCUM   = 3'd3; // sign, align and add partial product
-    localparam [2:0] S_TAP_ADD = 3'd4; // add completed 16x16 result to FIR sum
-    localparam [2:0] S_FINISH  = 3'd5; // scale, saturate and publish result
+    localparam [2:0] S_IDLE   = 3'd0;
+    localparam [2:0] S_LOAD   = 3'd1;
+    localparam [2:0] S_MULT   = 3'd2;
+    localparam [2:0] S_ADD_HI = 3'd3;
+    localparam [2:0] S_SCALE  = 3'd4;
 
     reg [2:0] state;
-    reg signed [15:0] sample_history [0:7];
-    reg signed [15:0] current_sample;
-    reg signed [15:0] current_coefficient;
-    reg [3:0] taps_latched;
-    reg [3:0] shift_latched;
-    reg sat_latched;
+    reg [15:0] sample_history [0:7];
+    reg [7:0] history_valid;
     reg [2:0] tap_idx;
-    reg [1:0] part_idx;
+    reg [2:0] last_tap;
+    reg [3:0] shift_remaining;
+    reg sat_latched;
 
-    // Sequential unsigned 8x8 multiplier (shift-and-add).
-    // {sm_acc, sm_q} is the 16-bit product register; sm_q starts as the
-    // multiplier and is consumed bit by bit through sm_q[0].
-    reg [7:0] sm_mcand;
-    reg [7:0] sm_acc;
-    reg [7:0] sm_q;
-    reg [2:0] sm_cnt;
+    reg [15:0] multiplicand;
+    reg [3:0] bit_idx;
+    reg [18:0] mul_hi;
+    // Eight full-precision products can sum to +2^33, requiring 35 bits.
+    reg [34:0] fir_acc;
 
-    reg signed [31:0] pp_acc;
-    reg signed [34:0] fir_acc;
+    wire clear = rst || filter_reset;
+    wire pcm_fire = pcm_valid && pcm_ready;
 
-    wire [3:0] taps_used = (num_taps > 4'd8) ? 4'd8 : num_taps;
-    assign dsp_busy  = (state != S_IDLE);
-    assign pcm_ready = (state == S_IDLE) && (!out_valid || out_ready) && !(rst || filter_reset);
+    assign dsp_busy = (state != S_IDLE);
+    assign pcm_ready = (state == S_IDLE) && (!out_valid || out_ready) && !clear;
 
-    // High bytes are signed 8-bit; low bytes are unsigned 8-bit.
-    // Take each high byte's magnitude before multiplication so the
-    // multiplier only ever sees unsigned 8-bit operands.
-    wire [7:0] sample_byte = part_idx[1] ? current_sample[15:8] : current_sample[7:0];
-    wire [7:0] coeff_byte  = part_idx[0] ? current_coefficient[15:8] : current_coefficient[7:0];
-    wire sample_negative = part_idx[1] && sample_byte[7];
-    wire coeff_negative  = part_idx[0] && coeff_byte[7];
-    wire [7:0] sample_mag = sample_negative ? (~sample_byte + 8'd1) : sample_byte;
-    wire [7:0] coeff_mag  = coeff_negative ? (~coeff_byte + 8'd1) : coeff_byte;
-
-    // One shift-and-add step: single 8-bit adder, gated by multiplier bit q0.
-    wire [8:0] sm_sum = {1'b0, sm_acc} + ({9{sm_q[0]}} & {1'b0, sm_mcand});
-    wire [15:0] mag_product = {sm_acc, sm_q};
-    wire signed [16:0] signed_partial = (sample_negative ^ coeff_negative) ? -$signed({1'b0, mag_product}) :  $signed({1'b0, mag_product});
-
-    // part_idx: 00 = lo*lo, 01 = lo*hi, 10 = hi*lo, 11 = hi*hi.
-    wire [4:0] part_shift = (part_idx == 2'b00) ? 5'd0 : (part_idx == 2'b11) ? 5'd16 : 5'd8;
-    wire signed [31:0] mul_extended = {{15{signed_partial[16]}}, signed_partial};
-    wire signed [31:0] aligned_partial = mul_extended <<< part_shift;
-
-    wire signed [34:0] pp_extended = {{3{pp_acc[31]}}, pp_acc};
-    wire signed [34:0] fir_shifted = fir_acc >>> shift_latched;
-    wire signed [15:0] final_sample = (!sat_latched) ? fir_shifted[15:0] :(fir_shifted > 35'sd32767)  ? 16'sh7fff :(fir_shifted < -35'sd32768) ? 16'sh8000 :fir_shifted[15:0];
-
+    // Only the validity bits need clearing. Invalid history reads as zero,
+    // and bypass samples enter history just like filtered samples.
     integer i;
     always @(posedge clk) begin
-        if (rst || filter_reset) begin
-            state<= S_IDLE;
-            current_sample<= 16'sd0;
-            current_coefficient <= 16'sd0;
-            taps_latched<= 4'd0;
-            shift_latched <= 4'd0;
-            sat_latched <= 1'b0;
-            tap_idx <= 3'd0;
-            part_idx <= 2'd0;
-            sm_mcand <= 8'd0;
-            sm_acc <= 8'd0;
-            sm_q <= 8'd0;
-            sm_cnt <= 3'd0;
-            pp_acc <= 32'sd0;
-            fir_acc <= 35'sd0;
-            out_data <= 16'sd0;
-            out_valid <= 1'b0;
-            sample_done <= 1'b0;
-            for (i = 0; i < 8; i = i + 1)
-                sample_history[i] <= 16'sd0;
+        if (pcm_fire) begin
+            sample_history[0] <= pcm_data;
+            for (i = 1; i < 8; i = i + 1)
+                sample_history[i] <= sample_history[i-1];
+        end
+    end
+
+    // During multiplication, {mul_hi, fir_acc[15:0]} is the signed
+    // shift-and-add register. Its upper part starts with the old FIR sum's
+    // low word, and its lower part starts with the coefficient bits.
+    // After 16 shifts it contains sample * coefficient + old_sum[15:0].
+    // S_ADD_HI then adds its high word to the saved old_sum[34:16].
+    wire add_hi = (state == S_ADD_HI);
+    wire mul_bit = !add_hi && fir_acc[0];
+    wire subtract = mul_bit && (bit_idx == 4'd15);
+    wire [18:0] sample_ext = {{3{multiplicand[15]}}, multiplicand};
+    wire [18:0] adder_a = add_hi ? fir_acc[34:16] : mul_hi;
+    wire [18:0] adder_b = add_hi ? mul_hi :
+                           ((sample_ext & {19{mul_bit}}) ^ {19{subtract}});
+    // The extra low bit supplies the two's-complement carry-in when
+    // subtracting the coefficient's sign bit. Both phases use one adder.
+    wire [18:0] sum;
+    wire unused_carry;
+    assign {sum, unused_carry} = {adder_a, 1'b1} + {adder_b, subtract};
+
+    // A signed value fits in 16 bits iff bits [34:15] are all equal.
+    wire overflow = (|fir_acc[34:15]) && !(&fir_acc[34:15]);
+    wire [15:0] clip_value = fir_acc[34] ? 16'h8000 : 16'h7fff;
+
+    always @(posedge clk) begin
+        if (clear) begin
+            state         <= S_IDLE;
+            history_valid <= 8'd0;
+            out_data      <= 16'sd0;
+            out_valid     <= 1'b0;
+            sample_done   <= 1'b0;
         end else begin
             sample_done <= 1'b0;
-
             if (out_valid && out_ready)
                 out_valid <= 1'b0;
 
             case (state)
                 S_IDLE: begin
-                    if (pcm_valid && pcm_ready) begin
-                        // History[0] is newest. A new sample shifts old
-                        // history one position towards higher indices.
-                        sample_history[0] <= pcm_data;
-                        for (i = 1; i < 8; i = i + 1)
-                            sample_history[i] <= sample_history[i-1];
-
-                        if (taps_used == 4'd0) begin
-                            // Bypass has no coefficient multiplication and
-                            // must output the ORIGINAL signed PCM sample.
+                    if (pcm_fire) begin
+                        history_valid <= {history_valid[6:0], 1'b1};
+                        if (num_taps == 4'd0) begin
                             out_data    <= pcm_data;
                             out_valid   <= 1'b1;
                             sample_done <= 1'b1;
                         end else begin
-                            taps_latched <= taps_used;
-                            shift_latched <= out_shift;
-                            sat_latched <= sat_en;
-                            tap_idx <= 3'd0;
-                            part_idx <= 2'd0;
-                            current_sample <= pcm_data;
-                            current_coefficient <= coeff[0];
-                            pp_acc <= 32'sd0;
-                            fir_acc <= 35'sd0;
                             state <= S_LOAD;
                         end
                     end
                 end
 
-                S_LOAD: begin
-                    // M <= coefficient byte magnitude, Q <= sample byte magnitude, A <= 0.
-                    sm_mcand <= coeff_mag;
-                    sm_q     <= sample_mag;
-                    sm_acc   <= 8'd0;
-                    sm_cnt   <= 3'd0;
-                    state    <= S_MULT;
-                end
+                S_LOAD: state <= S_MULT;
 
                 S_MULT: begin
-                    // Conditional add, then shift {sum, Q} right by one.
-                    sm_acc <= sm_sum[8:1];
-                    sm_q   <= {sm_sum[0], sm_q[7:1]};
-                    sm_cnt <= sm_cnt + 3'd1;
-                    if (sm_cnt == 3'd7)
-                        state <= S_ACCUM;
+                    if (bit_idx == 4'd15)
+                        state <= S_ADD_HI;
                 end
 
-                S_ACCUM: begin
-                    // {sm_acc, sm_q} holds the finished unsigned 8x8 product.
-                    pp_acc <= pp_acc + aligned_partial;
-                    if (part_idx == 2'd3)
-                        state <= S_TAP_ADD;
-                    else begin
-                        part_idx <= part_idx + 2'd1;
+                S_ADD_HI: begin
+                    if (tap_idx == last_tap)
+                        state <= S_SCALE;
+                    else
                         state <= S_LOAD;
-                    end
                 end
 
-                S_TAP_ADD: begin
-                    // pp_acc is now the complete signed 16x16 product.
-                    fir_acc <= fir_acc + pp_extended;
-                    if (({1'b0, tap_idx} + 4'd1) < taps_latched) begin
-                        tap_idx <= tap_idx + 3'd1;
-                        part_idx <= 2'd0;
-                        pp_acc <= 32'sd0;
-                        current_sample <= sample_history[tap_idx + 3'd1];
-                        current_coefficient <= coeff[tap_idx + 3'd1];
-                        state <= S_LOAD;
-                    end else begin
-                        state <= S_FINISH;
+                S_SCALE: begin
+                    if (shift_remaining == 4'd0) begin
+                        out_data    <= sat_latched && overflow ? clip_value : fir_acc[15:0];
+                        out_valid   <= 1'b1;
+                        sample_done <= 1'b1;
+                        state       <= S_IDLE;
                     end
-                end
-
-                S_FINISH: begin
-                    // fir_acc includes the last tap (added in S_TAP_ADD).
-                    out_data <= final_sample;
-                    out_valid <= 1'b1;
-                    sample_done <= 1'b1;
-                    state <= S_IDLE;
                 end
 
                 default: state <= S_IDLE;
             endcase
         end
+    end
+
+    // Reset the multiply counter with the controller because its terminal
+    // count drives FSM transitions.
+    always @(posedge clk) begin
+        if (clear || state == S_LOAD)
+            bit_idx <= 4'd0;
+        else if (state == S_MULT)
+            bit_idx <= bit_idx + 4'd1;
+    end
+
+    // The FSM initializes working data before using it.
+    always @(posedge clk) begin
+        case (state)
+            S_IDLE: begin
+                if (pcm_fire && (num_taps != 4'd0)) begin
+                    // Clamp values 9..15 to eight taps.
+                    last_tap        <= num_taps[3] ? 3'd7 : num_taps[2:0] - 3'd1;
+                    tap_idx         <= 3'd0;
+                    shift_remaining <= out_shift;
+                    sat_latched     <= sat_en;
+                    fir_acc         <= 35'd0;
+                end
+            end
+
+            S_LOAD: begin
+                multiplicand  <= history_valid[tap_idx] ? sample_history[tap_idx] : 16'd0;
+                mul_hi        <= {3'd0, fir_acc[15:0]};
+                fir_acc[15:0] <= coeff[tap_idx];
+            end
+
+            S_MULT: begin
+                mul_hi        <= {sum[18], sum[18:1]};
+                fir_acc[15:0] <= {sum[0], fir_acc[15:1]};
+            end
+
+            S_ADD_HI: begin
+                fir_acc[34:16] <= sum;
+                tap_idx        <= tap_idx + 3'd1;
+            end
+
+            S_SCALE: begin
+                if (shift_remaining != 4'd0) begin
+                    fir_acc         <= {fir_acc[34], fir_acc[34:1]};
+                    shift_remaining <= shift_remaining - 4'd1;
+                end
+            end
+
+            default: begin end
+        endcase
     end
 endmodule
 
