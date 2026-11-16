@@ -28,7 +28,7 @@ module tb ();
 `endif
 
   // Replace tt_um_example with your module name:
-  tt_audio_dsp_engine  u_engine (
+  tt_um_audio_dsp_engine  u_engine (
 
       // Include power ports for the Gate Level test:
 `ifdef GL_TEST
