@@ -11,7 +11,7 @@
  */
 `default_nettype none
 
-module tt_audio_dsp_engine (
+module tt_um_audio_dsp_engine (
     input  wire [7:0] ui_in,
     output wire [7:0] uo_out,
     input  wire [7:0] uio_in,
