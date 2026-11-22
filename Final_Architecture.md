@@ -16,7 +16,8 @@ Finally, the filtered digital signal is converted by a Sigma-Delta PWM Output st
 
 ## Coefficient Bank
 
-<img width="1022" height="681" alt="activeshadwo drawio" src="https://github.com/user-attachments/assets/93c7c392-a8cb-4d0b-bc99-04d4ffe2cb3e" />
+<img width="1022" height="681" alt="activeshadwo drawio (1)" src="https://github.com/user-attachments/assets/a9d6bc00-424c-4969-bcec-f6b7e574e5f6" />
+
 
 Incoming coefficients arrive one tap at a time from the packet parser and get written into the shadow bank, which holds up to 8 filter weights without touching the live filter. Each valid write uses the tap index to pick one 16-bit slot in the shadow bank and stores the new weight while the FIR engine keeps right on running.
 
@@ -29,8 +30,7 @@ As the FIR engine steps through its taps, it reads each active weight off the ac
 
 ## FIR Engine
 
-<img width="1022" height="681" alt="activeshadwo drawio (1)" src="https://github.com/user-attachments/assets/4fedc066-0832-4e20-8115-bec7fb6adce4" />
-
+<img width="557" height="521" alt="image" src="https://github.com/user-attachments/assets/e90d41ef-db99-4bd4-bddb-03cc2859c0ca" />
 
 A sample comes in and gets stored in the sample history, which keeps the last 8. Then the FSM works through the taps one at a time. For each tap, tap_idx picks one coefficient and one old sample, and they wait in Current Coefficient and Current Sample.
 
