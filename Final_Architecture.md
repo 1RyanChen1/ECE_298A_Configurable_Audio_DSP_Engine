@@ -29,7 +29,8 @@ As the FIR engine steps through its taps, it reads each active weight off the ac
 
 ## FIR Engine
 
-<img width="1200" height="482" alt="FIR Engine" src="https://github.com/user-attachments/assets/d9475376-fa7b-4c97-8441-750d6f01a1c0" />
+<img width="1022" height="681" alt="activeshadwo drawio (1)" src="https://github.com/user-attachments/assets/4fedc066-0832-4e20-8115-bec7fb6adce4" />
+
 
 A sample comes in and gets stored in the sample history, which keeps the last 8. Then the FSM works through the taps one at a time. For each tap, tap_idx picks one coefficient and one old sample, and they wait in Current Coefficient and Current Sample.
 
