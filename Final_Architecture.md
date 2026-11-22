@@ -16,6 +16,17 @@ Finally, the filtered digital signal is converted by a Sigma-Delta PWM Output st
 
 ## Coefficient Bank
 
+<img width="1022" height="681" alt="activeshadwo drawio" src="https://github.com/user-attachments/assets/93c7c392-a8cb-4d0b-bc99-04d4ffe2cb3e" />
+
+Incoming coefficients arrive one tap at a time from the packet parser and get written into the shadow bank, which holds up to 8 filter weights without touching the live filter. Each valid write uses the tap index to pick one 16-bit slot in the shadow bank and stores the new weight while the FIR engine keeps right on running.
+
+When a commit control command comes in, it waits until any active coefficient write is done and the FIR engine is no longer busy. If the filter is still mid-calculation, the commit sits pending until that sample finishes, and the top level holds off new PCM samples so nothing gets out of sync.
+
+Once the filter is idle, all 8 weights copy over from the shadow bank into the active bank at once and raise the updated flag. The shadow bank keeps its values instead of clearing or swapping, so a later packet that only updates a few taps still has the rest ready to go.
+
+As the FIR engine steps through its taps, it reads each active weight off the active bank's bus and multiplies it with the matching sample history entry. A global reset wipes both banks back to zero, while a filter reset only clears the FIR's sample history and state and leaves the stored weights alone.
+
+
 ## FIR Engine
 
 <img width="1200" height="482" alt="FIR Engine" src="https://github.com/user-attachments/assets/d9475376-fa7b-4c97-8441-750d6f01a1c0" />
