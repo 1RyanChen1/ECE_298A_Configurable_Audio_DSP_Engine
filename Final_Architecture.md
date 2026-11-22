@@ -1,5 +1,17 @@
 # Architecture Overview
 
+Below can be found the general block diagram overview of our FIR Engine DSP design.
+
+<img width="922" height="359" alt="Overview drawio" src="https://github.com/user-attachments/assets/9f94bf34-aa0a-43e7-8f6b-122d78f5ba03" />
+
+Starting on the left side, an external microcontroller sends clock and data streams into the Packet Parser, which decodes and routes incoming payloads into three distinct paths: raw audio samples (pcm_data, pcm_valid), filter weights (coeff), and operational settings (config). 
+
+New filter weights are staged safely in a double-buffered Coefficient Bank (Active + Shadow) for glitch-free updates, while Config & Status Flags supplies runtime parameters like tap count , saturation, and bit-shifting. 
+
+At the core of the design flow, the FIR Engine processes incoming audio using ready/valid handshaking (pcm_ready) and reports its current states (dsp_busy, sample_done) back to the microcontroller. 
+
+Finally, the filtered digital signal is converted by a Sigma-Delta PWM Output stage to drive real-time playback through the tiny tapeout pmod.
+
 Parser
 
 Coefficient Bank
