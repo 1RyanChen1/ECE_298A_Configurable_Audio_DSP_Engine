@@ -41,5 +41,7 @@ dsp_busy stays high the whole time and drops when the engine returns to idle, so
 
 ## Audio Output
 
+## 2D Overview
+
 <img width="557" height="521" alt="image" src="https://github.com/user-attachments/assets/e90d41ef-db99-4bd4-bddb-03cc2859c0ca" />
 
