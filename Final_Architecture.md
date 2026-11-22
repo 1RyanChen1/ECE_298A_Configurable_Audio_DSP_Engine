@@ -12,9 +12,9 @@ At the core of the design flow, the FIR Engine processes incoming audio using re
 
 Finally, the filtered digital signal is converted by a Sigma-Delta PWM Output stage to drive real-time playback through the tiny tapeout pmod.
 
-Parser
+## Parser
 
-Coefficient Bank
+## Coefficient Bank
 
 ## FIR Engine
 
@@ -39,7 +39,7 @@ After the first tap it's 0x7FC000000 (a negative value), after the second tap it
 
 dsp_busy stays high the whole time and drops when the engine returns to idle, so we can see the full Load, Mult, Add, Scale flow from the diagram happening in real time.
 
-# Audio Output
+## Audio Output
 
 <img width="557" height="521" alt="image" src="https://github.com/user-attachments/assets/e90d41ef-db99-4bd4-bddb-03cc2859c0ca" />
 
