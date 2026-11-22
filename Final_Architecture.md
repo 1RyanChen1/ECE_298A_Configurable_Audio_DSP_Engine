@@ -1,4 +1,4 @@
-# Title Architecture Overview
+# Architecture Overview
 
 Parser
 
