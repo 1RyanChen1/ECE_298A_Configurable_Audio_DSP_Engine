@@ -41,7 +41,8 @@ Then add_hi flips both muxes, and the adder folds the product's top half into th
 
 When all taps are finished, the total is shifted down to the right size and clipped if it's too big. The output mux then sends it out, or passes the raw input straight through if the filter is set to zero taps.
 
-<img width="1424" height="1144" alt="image" src="https://github.com/user-attachments/assets/98b8f94c-8e65-4a52-a12f-f378d6ef7483" />
+<img width="1424" height="1144" alt="image" src="https://github.com/user-attachments/assets/66acd456-df47-4d03-825e-a49a20351efc" />
+
 
 
 
