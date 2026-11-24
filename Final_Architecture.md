@@ -13,8 +13,7 @@ At the core of the design flow, the FIR Engine processes incoming audio using re
 Finally, the filtered digital signal is converted by a Sigma-Delta PWM Output stage to drive real-time playback through the tiny tapeout pmod.
 
 ## Packet Parser
-<img width="1232" height="485" alt="image" src="https://github.com/user-attachments/assets/134aeb38-6820-480b-9b92-28d90dad89a1" />
-
+<img width="1218" height="466" alt="image" src="https://github.com/user-attachments/assets/2556030d-5149-470e-9068-1a0dc35d0355" />
 
 The packet parser receives and directs data for the chip. It uses double transfer rate (DTR) allowing 16 bits of data to be transferred every cycle. When ready and valid are asserted, the Credit and Occupancy block sends the accept signal to the upper byte register. It latches the upper bits on the rising edge and on the falling edge, the data is pushed directly to the 2-entry Flit FIFO. 
 
