@@ -21,7 +21,8 @@ Once downstream interfaces are ready, the Dispatch gating block asserts flit_con
 
 ## Coefficient Bank
 
-<img width="1022" height="681" alt="activeshadwo drawio (1)" src="https://github.com/user-attachments/assets/a9d6bc00-424c-4969-bcec-f6b7e574e5f6" />
+<img width="1021" height="681" alt="activeshadwodark drawio" src="https://github.com/user-attachments/assets/54d78a1a-e909-44db-ad25-ae0e54ee0421" />
+
 
 
 Incoming coefficients arrive one tap at a time from the packet parser and get written into the shadow bank, which holds up to 8 filter weights without touching the live filter. Each valid write uses the tap index to pick one 16-bit slot in the shadow bank and stores the new weight while the FIR engine keeps right on running.
