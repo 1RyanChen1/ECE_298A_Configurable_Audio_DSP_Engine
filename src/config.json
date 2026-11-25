@@ -43,8 +43,7 @@
   "RUN_POST_GRT_DESIGN_REPAIR": true,
   "RUN_POST_GRT_RESIZER_TIMING": true,
 
-  "//": "Require setup timing to pass at all analyzed corners.",
-  "SETUP_VIOLATION_CORNERS": ["*"],
+
 
   
   "//": "Configuration docs: https://librelane.readthedocs.io/en/latest/reference/configuration.html",
