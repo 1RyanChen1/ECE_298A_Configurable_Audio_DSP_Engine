@@ -65,6 +65,33 @@ After the first tap it's 0x7FC000000 (a negative value), after the second tap it
 dsp_busy stays high the whole time and drops when the engine returns to idle, so we can see the full Load, Mult, Add, Scale flow from the diagram happening in real time.
 
 ## Audio Output
+## Sigma-Delta Pulse Density Modulation
+
+The output module converts a signed 16-bit PCM sample into a one-bit stream using a 1bit sigma-delta modulator. Audio amplitude is represented by the proportion of output bits that are high.
+
+### Accumulator operation
+
+First, the signed sample (x) is mapped to an unsigned value:
+
+unsigned_sample = x + 32768
+
+sum = accumulator + unsigned_sample
+
+audio_out = sum’s carry bit
+
+accumulator = sum’s lower 16 bits, initially 0
+
+average portion of 1's: u/65536
+
+| Signed PCM sample | Average ones density |
+| --- | ---: |
+| −32768 | 0% |
+| −16384 | 25% |
+| 0 | 50% |
+| +16384 | 75% |
+| +32767 | Approximately 100% |
+
+Signed zero produces 50% density because it represents the midpoint of the unsigned output range.
 
 ## 2D Overview
 
