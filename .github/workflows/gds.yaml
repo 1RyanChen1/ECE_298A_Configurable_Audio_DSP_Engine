@@ -17,6 +17,18 @@ jobs:
         uses: TinyTapeout/tt-gds-action@ttgf26a
         with:
           pdk: gf180mcuD
+      - name: Sweep post route host timing
+        if: ${{ !cancelled() && hashFiles('runs/wokwi/resolved.json') != '' }}
+        run: python .github/scripts/post_pnr_timing_sweep.py
+
+      - name: Upload host timing sweep
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: host_timing_sweep
+          path: timing_sweep/
+          if-no-files-found: warn
+          retention-days: 14
 
   precheck:
     needs: gds
