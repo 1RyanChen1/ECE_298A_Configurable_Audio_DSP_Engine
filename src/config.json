@@ -42,7 +42,7 @@
   "//": "Enable design and timing repair after global routing.",
   "RUN_POST_GRT_DESIGN_REPAIR": true,
   "RUN_POST_GRT_RESIZER_TIMING": true,
-  "SETUP_VIOLATION_CORNERS": ["*tt*"],
+  "SETUP_VIOLATION_CORNERS": ["*"],
   "HOLD_VIOLATION_CORNERS": ["*"],
 
 
