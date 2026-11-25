@@ -1,28 +1,3 @@
-// ============================================================================
-// rx_packet_parser
-//
-// Receives the 8-bit DTR host link, rebuilds 16-bit flits, decodes packets and
-// dispatches PCM / coefficient / config / control transactions.
-//
-// Structure
-//   1. DTR front end   : upper byte @posedge, lower byte @negedge, pushed into
-//                        a 2-entry flit FIFO. READY is registered and is
-//                        derived from FIFO occupancy (credit based), so it can
-//                        stay high on back-to-back cycles: one flit per clock
-//                        is sustained as long as the parser keeps up.
-//   2. Decode register : a rising-edge holding stage reads the FIFO. The
-//                        falling-to-rising path ends here, before packet
-//                        decode and dispatch. This adds one flit of capacity.
-//   3. Dispatch gating : the held flit is consumed by the packet FSM only
-//                        when the output slot(s) it needs are free, and when
-//                        older traffic it must stay ordered against has
-//                        already been handed off (see consume_ok).
-//   4. Packet FSM      : IDLE / DATA / COEFF.
-//
-// Error policy: any malformed header sets the sticky protocol_error flag and
-// the packet is dropped WITHOUT resync. Payload flits of a bad header are
-// parsed as headers. The host must reset (rst_n) to recover.
-// ============================================================================
 module rx_packet_parser (
     input  logic        clk,
     input  logic        rst_n,
@@ -179,7 +154,16 @@ module rx_packet_parser (
     // FIFO storage is released when copied here, not when decoded later.
     // READY therefore accounts for the two FIFO entries independently of
     // this extra holding slot. A stalled held flit cannot be overwritten.
-    assign fifo_nonempty = (wr_ptr != rd_ptr);
+    // At a rising edge, every flit counted in occ was accepted on an
+    // earlier rising edge and written on its following falling edge.
+    // Thus occ != 0 already tells this rising-edge consumer that a
+    // complete FIFO word is available. The current edge's new accept
+    // only enters occ AFTER the edge and cannot be taken prematurely.
+    // Use this local credit state instead of a negedge wr_ptr compare,
+    // keeping the FIFO-take -> credit-update -> READY path full-cycle.
+    // This relies on the fixed posedge-accept / following-negedge-write
+    // protocol; it is not an asynchronous FIFO empty-detection scheme.
+    assign fifo_nonempty = (occ != 2'd0);
     assign decode_can_load = !flit_valid || flit_consume;
     assign fifo_take = fifo_nonempty && decode_can_load;
 
