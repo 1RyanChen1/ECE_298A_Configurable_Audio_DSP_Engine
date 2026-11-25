@@ -22,6 +22,18 @@ module tt_um_audio_dsp_engine (
     input  wire       rst_n
 );
 
+    // FIR global reset: assert immediately, release after two rising edges.
+    // Keep the asynchronous board reset off the FIR's combinational accept
+    // and datapath-enable chain. The FIR itself still resets synchronously.
+    // Software filter_reset keeps its existing, unpipelined behavior.
+    (* async_reg = "true" *) reg [1:0] fir_reset_pipe;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            fir_reset_pipe <= 2'b11;
+        else
+            fir_reset_pipe <= {fir_reset_pipe[0], 1'b0};
+    end
+
     // -------- Host DTR link / parser outputs --------
     wire        host_ready;
     wire        pcm_valid;
@@ -140,7 +152,7 @@ module tt_um_audio_dsp_engine (
 
     fir_engine u_fir_engine (
         .clk         (clk),
-        .rst         (~rst_n),  // fir_engine currently expects active-HIGH reset
+        .rst         (fir_reset_pipe[1]),  // active-HIGH local global reset
         .filter_reset(filter_reset),
         .num_taps    (active_num_taps),
         .out_shift   (active_out_shift),

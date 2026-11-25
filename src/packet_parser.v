@@ -10,11 +10,14 @@
 //                        derived from FIFO occupancy (credit based), so it can
 //                        stay high on back-to-back cycles: one flit per clock
 //                        is sustained as long as the parser keeps up.
-//   2. Dispatch gating : the head flit is consumed by the packet FSM only
+//   2. Decode register : a rising-edge holding stage reads the FIFO. The
+//                        falling-to-rising path ends here, before packet
+//                        decode and dispatch. This adds one flit of capacity.
+//   3. Dispatch gating : the held flit is consumed by the packet FSM only
 //                        when the output slot(s) it needs are free, and when
 //                        older traffic it must stay ordered against has
 //                        already been handed off (see consume_ok).
-//   3. Packet FSM      : IDLE / DATA / COEFF.
+//   4. Packet FSM      : IDLE / DATA / COEFF.
 //
 // Error policy: any malformed header sets the sticky protocol_error flag and
 // the packet is dropped WITHOUT resync. Payload flits of a bad header are
@@ -78,7 +81,7 @@ module rx_packet_parser (
     logic [7:0]  upper_byte;     // upper byte captured @posedge on accept
     logic        upper_pending;  // high for the cycle after an accept
     logic        accept;         // valid && ready @posedge
-    logic [1:0]  occ;            // flits accepted but not yet consumed
+    logic [1:0]  occ;            // flits accepted but not yet moved to decode
                                  //   (includes the one whose lower byte is in flight)
     logic [1:0]  occ_next;
 
@@ -87,8 +90,10 @@ module rx_packet_parser (
     logic [15:0] fifo_mem1;
     logic [1:0]  wr_ptr;         // negedge domain
     logic [1:0]  rd_ptr;         // posedge domain
-    logic [15:0] flit_data;      // FIFO head
-    logic        flit_valid;     // FIFO not empty
+    logic        fifo_nonempty;
+    logic        fifo_take;      // move FIFO head into the decode register
+    logic [15:0] flit_data;      // posedge decode holding register
+    logic        flit_valid;     // decode register contains a valid flit
     logic        flit_consume;   // FSM consumes the head flit on this posedge
     logic        consume_ok;     // dispatch gating (see below)
 
@@ -125,7 +130,7 @@ module rx_packet_parser (
     assign accept = valid && ready;
 
     always_comb begin
-        occ_next = occ + {1'b0, accept} - {1'b0, flit_consume};
+        occ_next = occ + {1'b0, accept} - {1'b0, fifo_take};
     end
 
     always_ff @(posedge clk or negedge rst_n) begin
@@ -144,7 +149,7 @@ module rx_packet_parser (
             occ   <= occ_next;
             ready <= (occ_next != 2'd2);
 
-            if (flit_consume)
+            if (fifo_take)
                 rd_ptr <= rd_ptr + 2'd1;
         end
     end
@@ -162,8 +167,28 @@ module rx_packet_parser (
         end
     end
 
-    assign flit_valid = (wr_ptr != rd_ptr);
-    assign flit_data  = rd_ptr[0] ? fifo_mem1 : fifo_mem0;
+    // This elastic stage can consume and refill on the same rising edge.
+    // FIFO storage is released when copied here, not when decoded later.
+    // READY therefore accounts for the two FIFO entries independently of
+    // this extra holding slot. A stalled held flit cannot be overwritten.
+    assign fifo_nonempty = (wr_ptr != rd_ptr);
+    assign fifo_take = fifo_nonempty && (!flit_valid || flit_consume);
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n)
+            flit_valid <= 1'b0;
+        else if (fifo_take)
+            flit_valid <= 1'b1;
+        else if (flit_consume)
+            flit_valid <= 1'b0;
+    end
+
+    // Only the valid bit needs reset. The packet FSM cannot observe this
+    // data until a FIFO flit has initialized it and asserted flit_valid.
+    always_ff @(posedge clk) begin
+        if (fifo_take)
+            flit_data <= rd_ptr[0] ? fifo_mem1 : fifo_mem0;
+    end
 
     // ========================================================
     // DISPATCH GATING
