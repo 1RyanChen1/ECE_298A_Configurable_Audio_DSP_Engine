@@ -92,6 +92,7 @@ module rx_packet_parser (
     logic [1:0]  rd_ptr;         // posedge domain
     logic        fifo_nonempty;
     logic        fifo_take;      // move FIFO head into the decode register
+    logic        decode_can_load;
     logic [15:0] flit_data;      // posedge decode holding register
     logic        flit_valid;     // decode register contains a valid flit
     logic        flit_consume;   // FSM consumes the head flit on this posedge
@@ -155,15 +156,22 @@ module rx_packet_parser (
     end
 
     always_ff @(negedge clk or negedge rst_n) begin
-        if (!rst_n) begin
+        if (!rst_n)
             wr_ptr <= 2'd0;
-        end
-        else if (upper_pending) begin
+        else if (upper_pending)
+            wr_ptr <= wr_ptr + 2'd1;
+    end
+
+    // Payload storage does not need reset: wr_ptr/rd_ptr and flit_valid
+    // invalidate it, and upper_pending is cleared by reset. Keeping these
+    // writes out of the reset-controlled block avoids a raw rst_n gate
+    // on every FIFO data flop's write enable.
+    always_ff @(negedge clk) begin
+        if (upper_pending) begin
             if (wr_ptr[0])
                 fifo_mem1 <= {upper_byte, link};
             else
                 fifo_mem0 <= {upper_byte, link};
-            wr_ptr <= wr_ptr + 2'd1;
         end
     end
 
@@ -172,7 +180,8 @@ module rx_packet_parser (
     // READY therefore accounts for the two FIFO entries independently of
     // this extra holding slot. A stalled held flit cannot be overwritten.
     assign fifo_nonempty = (wr_ptr != rd_ptr);
-    assign fifo_take = fifo_nonempty && (!flit_valid || flit_consume);
+    assign decode_can_load = !flit_valid || flit_consume;
+    assign fifo_take = fifo_nonempty && decode_can_load;
 
     always_ff @(posedge clk or negedge rst_n) begin
         if (!rst_n)
@@ -183,10 +192,13 @@ module rx_packet_parser (
             flit_valid <= 1'b0;
     end
 
-    // Only the valid bit needs reset. The packet FSM cannot observe this
-    // data until a FIFO flit has initialized it and asserted flit_valid.
+    // Capture whenever this slot is available, even if the FIFO is empty.
+    // In that case flit_valid remains low, so the speculative data cannot
+    // be consumed. This keeps the falling-edge wr_ptr -> FIFO-nonempty
+    // compare off the 16 data flops' enable path; only validity/credits
+    // depend on the compare. A valid stalled flit still holds its data.
     always_ff @(posedge clk) begin
-        if (fifo_take)
+        if (decode_can_load)
             flit_data <= rd_ptr[0] ? fifo_mem1 : fifo_mem0;
     end
 
