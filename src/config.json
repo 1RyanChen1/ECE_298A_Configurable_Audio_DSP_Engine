@@ -17,7 +17,7 @@
 
   "//": "CLOCK_PERIOD - Increase this in case you are getting setup time violations.",
   "//": "The value is in nanoseconds, so 20ns == 50MHz.",
-  "CLOCK_PERIOD": 40,
+  "CLOCK_PERIOD": 50,
 
   "//": "Use the nominal slew limit and a fanout target of 20 for design repair.",
   "DESIGN_REPAIR_MAX_SLEW_PCT": 0,
