@@ -48,7 +48,9 @@ from cocotb.triggers import ClockCycles, FallingEdge, RisingEdge, Timer
 CLK_PERIOD_NS = 40   # 25 MHz; host provides this clock
 MAX_READY_RETRIES = 10000
 MAX_STATUS_WAIT = 2000
-SETTLE_CYCLES = 512
+# Include queued PCM requests in the FIFO, decode stage, and output slot,
+# not just one FIR operation. The decode stage adds one flit of buffering.
+SETTLE_CYCLES = 1024
 PDM_WINDOW = 4096
 PDM_TOLERANCE_BITS = 2
 
