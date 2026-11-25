@@ -119,7 +119,7 @@ def main():
         case_sdc.write_text(KNOB.sub(f"set host_variation_ns {variation}.0", template))
         command = [sys.executable, "-m", "librelane"]
         if not args.no_docker:
-            command += ["--dockerized", "--docker-no-tty"]
+            command += ["--docker-no-tty", "--dockerized"]
         command += [
             "--manual-pdk", "--pdk-root", resolved["PDK_ROOT"],
             "--pdk", resolved["PDK"], "--scl", resolved["STD_CELL_LIBRARY"],
