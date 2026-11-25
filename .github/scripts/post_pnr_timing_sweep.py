@@ -128,8 +128,12 @@ def main():
             "--design-dir", resolved["DESIGN_DIR"],
             "--run-tag", f"host_variation_{variation}ns", "--force-run-dir", str(case),
             "--hide-progress-bar",
-            "-c", "PNR_SDC_FILE=" + json.dumps(str(case_sdc)),
-            "-c", "SIGNOFF_SDC_FILE=" + json.dumps(str(case_sdc)),
+            # subprocess passes each argument literally. LibreLane 3.0.3
+            # keeps path override values verbatim; JSON quotes become part
+            # of the filename. Shell quoting belongs only in the printed
+            # shlex.join representation, never in these argument values.
+            "-c", "PNR_SDC_FILE=" + str(case_sdc),
+            "-c", "SIGNOFF_SDC_FILE=" + str(case_sdc),
             str(config),
         ]
         (case / "command.json").write_text(json.dumps(command, indent=2))
@@ -142,9 +146,12 @@ def main():
                 proc = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False)
             row = summarize(case, variation, proc.returncode)
             print(f"Result: {row}", flush=True)
-            if row["status"] == "TOOL_ERROR":
-                print((case / "sta-console.log").read_text()[-6000:], flush=True)
         print("::endgroup::", flush=True)
+        # Put diagnostics outside the collapsed group so the actual cause
+        # is visible beside TOOL_ERROR in the main GitHub log.
+        if row["status"] == "TOOL_ERROR":
+            print(f"::error title=STA execution failed::Variation +/-{variation} ns; return code {row['returncode']}. See the log excerpt below and {case}/sta-console.log", flush=True)
+            print((case / "sta-console.log").read_text()[-6000:], flush=True)
         rows.append(row)
         write_results(out, rows)
     if any(digest(Path(path)) != value for path, value in original.items()):
