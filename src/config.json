@@ -35,6 +35,10 @@
   "//": "https://tinytapeout.com/faq/#how-can-i-map-an-additional-external-clock-to-one-of-the-gpios",
   "CLOCK_PORT": "clk",
 
+  "//": "Explicit baseline timing constraints; see docs/timing_constraints.md for host timing assumptions.",
+  "PNR_SDC_FILE": "dir::project.sdc",
+  "SIGNOFF_SDC_FILE": "dir::project.sdc",
+
   "//": "Configuration docs: https://librelane.readthedocs.io/en/latest/reference/configuration.html",
 
   "//": "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",
