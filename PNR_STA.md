@@ -94,7 +94,7 @@ Hold passes throughout the sweep. The worst overall setup corner is `max_ss_125C
 
 | Check | Reported count | Worst value | Limit | Magnitude |
 |---|---:|---:|---:|---|
-| Capacitance | 19 | **0.3212 pF** | 0.2000 pF | **61% above limit** |
-| Slew | 760 | **17.8148 ns** | 3.0000 ns | **5.94× the limit** |
+| Capacitance | 19 | 0.3212 pF | 0.2000 pF | 61% above limit |
+| Slew | 760 | 17.8148 ns | 3.0000 ns | 5.94× the limit |
 
 Targeted buffer insertion/driver resize could be the potential fix, idk how to do it 
